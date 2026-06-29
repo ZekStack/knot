@@ -1,0 +1,32 @@
+{
+  "name": "Knot",
+  "version": "0.0.1",
+  "description": "Bcrypt-style password hashing library for ESP32.",
+  "keywords": [
+    "esp32",
+    "password",
+    "hashing",
+    "pbkdf2",
+    "security"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZekStack/knot.git"
+  },
+  "authors": [
+    {
+      "name": "zekageri",
+      "maintainer": true
+    }
+  ],
+  "license": "MIT",
+  "frameworks": "arduino",
+  "platforms": "espressif32",
+  "build": {
+    "srcDir": "src",
+    "includeDir": "src",
+    "flags": [
+      "-std=gnu++20"
+    ]
+  }
+}
