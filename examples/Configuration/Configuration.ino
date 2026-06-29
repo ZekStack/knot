@@ -7,9 +7,9 @@ void setup() {
 	Serial.begin(115200);
 
 	KnotConfig config;
-	config.defaultCost = 9;
+	config.defaultCost = 4;
 	config.minCost = 4;
-	config.maxCost = 12;
+	config.maxCost = 16;
 	config.maxPasswordLength = 48;
 	config.useMutex = true;
 	config.useConstantTimeCompare = true;

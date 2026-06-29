@@ -4,7 +4,7 @@
 
 ```cpp
 KnotConfig config;
-config.defaultCost = 10;
+config.defaultCost = 14;
 config.minCost = 4;
 config.maxCost = 16;
 config.maxPasswordLength = 72;
@@ -18,7 +18,7 @@ KnotResult result = knot.init(config);
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `defaultCost` | `10` | Cost used by `hash(password)` and `genSalt()`. |
+| `defaultCost` | `14` | Cost used by `hash(password)` and `genSalt()`. |
 | `minCost` | `4` | Lowest accepted cost. |
 | `maxCost` | `16` | Highest accepted cost. |
 | `maxPasswordLength` | `72` | Maximum password byte length. |
@@ -37,4 +37,15 @@ In v0.1, cost maps to PBKDF2 iterations as:
 iterations = 1000 * 2^(cost - 4)
 ```
 
-Tune the value on the exact ESP32 board and firmware profile used by the product.
+| Cost | PBKDF2-HMAC-SHA256 iterations |
+| --- | ---: |
+| 4 | 1,000 |
+| 10 | 64,000 |
+| 14 | 1,024,000 |
+| 16 | 4,096,000 |
+
+Cost 14 is the secure default, not the demo or test setting. Examples and host tests that need speed explicitly configure cost 4.
+
+Production firmware must benchmark cost 14 on the exact ESP32 board and firmware profile used by the product. Lower the cost only with a documented latency and denial-of-service tradeoff.
+
+Existing `$knot$v1$c10$...` hashes remain verifiable. They become rehash candidates when checked against the new default cost 14.

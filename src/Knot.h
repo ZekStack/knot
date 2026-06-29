@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <memory>
 
-#define KNOT_DEFAULT_COST 10
+#define KNOT_DEFAULT_COST 14
 #define KNOT_MIN_COST 4
 #define KNOT_MAX_COST 16
 #define KNOT_MAX_PASSWORD_LENGTH 72
@@ -108,6 +108,9 @@ class Knot {
 	KnotHashResult hash(const char *password);
 	KnotHashResult hash(const char *password, uint8_t cost);
 	KnotHashResult hash(const char *password, const char *encodedSalt);
+	KnotHashResult hash(const uint8_t *password, size_t passwordLen);
+	KnotHashResult hash(const uint8_t *password, size_t passwordLen, uint8_t cost);
+	KnotHashResult hash(const uint8_t *password, size_t passwordLen, const char *encodedSalt);
 
 	KnotResult genSaltTo(char *output, size_t outputSize);
 	KnotResult genSaltTo(uint8_t cost, char *output, size_t outputSize);
@@ -120,8 +123,24 @@ class Knot {
 	    char *output,
 	    size_t outputSize
 	);
+	KnotResult hashTo(const uint8_t *password, size_t passwordLen, char *output, size_t outputSize);
+	KnotResult hashTo(
+	    const uint8_t *password,
+	    size_t passwordLen,
+	    uint8_t cost,
+	    char *output,
+	    size_t outputSize
+	);
+	KnotResult hashTo(
+	    const uint8_t *password,
+	    size_t passwordLen,
+	    const char *encodedSalt,
+	    char *output,
+	    size_t outputSize
+	);
 
 	KnotCompareResult compare(const char *password, const char *encodedHash);
+	KnotCompareResult compare(const uint8_t *password, size_t passwordLen, const char *encodedHash);
 
 	KnotRoundsResult getRounds(const char *encodedHash);
 	KnotRoundsResult getCost(const char *encodedHash);

@@ -4,9 +4,11 @@
 #include <cstring>
 
 class PasswordStore {
-  public:
+ public:
 	bool begin() {
-		KnotResult result = _knot.init();
+		KnotConfig config;
+		config.defaultCost = 4;
+		KnotResult result = _knot.init(config);
 		if (!result) {
 			Serial.println(result.message);
 			return false;

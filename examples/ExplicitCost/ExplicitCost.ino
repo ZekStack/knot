@@ -6,13 +6,15 @@ Knot knot;
 void setup() {
 	Serial.begin(115200);
 
-	KnotResult init = knot.init();
+	KnotConfig config;
+	config.defaultCost = 4;
+	KnotResult init = knot.init(config);
 	if (!init) {
 		Serial.println(init.message);
 		return;
 	}
 
-	KnotHashResult hash = knot.hash("password", 12);
+	KnotHashResult hash = knot.hash("password", 4);
 	if (!hash) {
 		Serial.println(hash.message);
 		return;

@@ -13,7 +13,7 @@ The requested cost is outside the configured `[minCost, maxCost]` range.
 `hash(password, encodedSalt)` expects a salt string from `genSalt()`:
 
 ```txt
-$knot$v1$c10$<salt>
+$knot$v1$c14$<salt>
 ```
 
 It does not accept a full stored hash.
@@ -23,7 +23,7 @@ It does not accept a full stored hash.
 `compare()`, `getRounds()`, and `getInfo()` expect a full stored hash:
 
 ```txt
-$knot$v1$c10$<salt>$<hash>
+$knot$v1$c14$<salt>$<hash>
 ```
 
 ## `UnsupportedAlgorithm`
@@ -36,4 +36,4 @@ The password exceeds `config.maxPasswordLength`. The default is `72` bytes.
 
 ## Hashing feels slow
 
-Reduce cost or move hashing to a background task. Always choose cost from real target hardware measurements.
+Move hashing to a background task if the caller cannot block. Cost 14 is the secure default and may be slow on ESP32 targets; lower it only after measuring the latency and denial-of-service tradeoff on real hardware.

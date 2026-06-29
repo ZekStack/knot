@@ -6,14 +6,16 @@ Knot knot;
 void setup() {
 	Serial.begin(115200);
 
-	KnotResult init = knot.init();
+	KnotConfig config;
+	config.defaultCost = 4;
+	KnotResult init = knot.init(config);
 	if (!init) {
 		Serial.println(init.message);
 		return;
 	}
 
 	char salt[KNOT_MAX_SALT_LENGTH + 1] = {};
-	KnotResult result = knot.genSaltTo(10, salt, sizeof(salt));
+	KnotResult result = knot.genSaltTo(4, salt, sizeof(salt));
 	if (!result) {
 		Serial.println(result.message);
 		return;

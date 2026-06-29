@@ -1,6 +1,6 @@
 # Knot
 
-Knot is a bcrypt-style password hashing library for ESP32.
+Knot is a compact ESP32 password hashing library with a bcrypt-like self-contained hash string format, backed by PBKDF2-HMAC-SHA256.
 
 Knot helps Arduino ESP32 projects create and verify self-contained password hashes with secure salt generation, cost-based PBKDF2-HMAC-SHA256 hashing, constant-time comparison, and bounded result buffers.
 
@@ -13,7 +13,7 @@ Knot helps Arduino ESP32 projects create and verify self-contained password hash
 * **Password-focused** - generate salts, hash passwords, compare stored hashes, and detect old costs.
 * **Self-contained hashes** - the encoded hash stores the algorithm marker, version, cost, salt, and derived key.
 * **ESP32-friendly** - fixed public buffers, no exceptions, result-based errors, and optional mutex protection.
-* **Bcrypt-inspired API** - familiar `genSalt()`, `hash()`, `compare()`, and `getRounds()` style.
+* **Familiar API shape** - `genSalt()`, `hash()`, `compare()`, and `getRounds()` helpers without bcrypt compatibility claims.
 * **Clear compatibility** - Knot hashes are not bcrypt hashes and never use bcrypt `$2a$`, `$2b$`, or `$2y$` prefixes.
 
 ## Install
@@ -85,12 +85,12 @@ void loop() {
 ## Important notes
 
 > [!IMPORTANT]
-> Knot is bcrypt-style, not bcrypt-compatible. Store and verify Knot hashes only with Knot.
+> Knot uses PBKDF2-HMAC-SHA256, not bcrypt. Store and verify Knot hashes only with Knot.
 
 * v0.1 hashes use `$knot$v1$c<cost>$<salt>$<hash>`.
 * `v1` means PBKDF2-HMAC-SHA256 with a 16-byte salt and 32-byte derived key.
 * Password input is limited to `KNOT_MAX_PASSWORD_LENGTH` bytes by default.
-* Higher cost values are slower. Tune cost on real target hardware.
+* Cost 14 is the secure default, not the demo setting. Tune cost on real target hardware.
 * Hashing is synchronous. Offload it to a background task if your application cannot block.
 
 ## Examples
@@ -105,6 +105,7 @@ void loop() {
 | `HashInfo` | Read algorithm, version, and cost metadata. |
 | `Configuration` | Configure password length and cost limits. |
 | `ClassUsage` | Use Knot from an application class. |
+| `Benchmark` | Print target, cost, iterations, timing, and heap measurements. |
 
 Start with:
 
@@ -125,7 +126,7 @@ Detailed documentation is available in the `docs/` folder.
 | [`docs/security.md`](docs/security.md) | Password hashing and storage notes. |
 | [`docs/memory.md`](docs/memory.md) | Buffers, mutexes, and synchronous behavior. |
 | [`docs/troubleshooting.md`](docs/troubleshooting.md) | Common issues and fixes. |
-| [`docs/bcrypt-positioning.md`](docs/bcrypt-positioning.md) | Bcrypt-inspired API and compatibility limits. |
+| [`docs/bcrypt-positioning.md`](docs/bcrypt-positioning.md) | Bcrypt-like format and compatibility limits. |
 
 ## API overview
 
@@ -133,12 +134,12 @@ Detailed documentation is available in the `docs/` folder.
 Knot knot;
 knot.init();
 
-KnotSaltResult salt = knot.genSalt(10);
+KnotSaltResult salt = knot.genSalt(14);
 KnotHashResult hash = knot.hash("password", salt.value);
 KnotCompareResult check = knot.compare("password", hash.value);
 
 KnotRoundsResult cost = knot.getRounds(hash.value);
-bool upgrade = knot.needsRehash(hash.value, 12);
+bool upgrade = knot.needsRehash(hash.value, 14);
 ```
 
 For the full API, see [`docs/api.md`](docs/api.md).
@@ -160,7 +161,7 @@ For the full API, see [`docs/api.md`](docs/api.md).
 
 ```cpp
 KnotConfig config;
-config.defaultCost = 10;
+config.defaultCost = 14;
 config.minCost = 4;
 config.maxCost = 16;
 config.maxPasswordLength = 72;
@@ -169,6 +170,8 @@ KnotResult result = knot.init(config);
 ```
 
 For all options, see [`docs/configuration.md`](docs/configuration.md).
+
+Existing `$knot$v1$c10$...` hashes remain verifiable after the default cost change. They are treated as rehash candidates when checked against the new default cost 14.
 
 ## Error handling
 

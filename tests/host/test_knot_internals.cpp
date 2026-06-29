@@ -3,6 +3,7 @@
 #include <internal/KnotCrypto.h>
 #include <internal/KnotFormat.h>
 
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 
@@ -44,6 +45,27 @@ void testBase64Url() {
 
 	result = zek::knot::internal::base64UrlDecode("a", 1, decoded, sizeof(decoded), written);
 	expect(!result && result.code == KnotCode::InvalidHash, "base64url invalid length");
+
+	const char *badValues[] = {
+	    "=",
+	    "====",
+	    "abc$",
+	    "abc*",
+	    "abc/",
+	    "abc+",
+	    "abc def",
+	    "abc\n",
+	};
+	for (const char *badValue : badValues) {
+		result = zek::knot::internal::base64UrlDecode(
+		    badValue,
+		    std::strlen(badValue),
+		    decoded,
+		    sizeof(decoded),
+		    written
+		);
+		expect(!result, "base64url malformed fuzz case");
+	}
 }
 
 void testFormat() {
@@ -142,6 +164,43 @@ void testFormat() {
 
 	result = zek::knot::internal::parseHash("$knot$v2$c4$AAECAwQFBgcICQoLDA0ODw$x", parsed);
 	expect(!result && result.code == KnotCode::UnsupportedVersion, "unsupported version");
+
+	const char *badHashes[] = {
+	    "",
+	    "$knot$",
+	    "$knot$v1$",
+	    "$knot$v1$c$AAECAwQFBgcICQoLDA0ODw$x",
+	    "$knot$v1$cabc$AAECAwQFBgcICQoLDA0ODw$x",
+	    "$knot$v1$c256$AAECAwQFBgcICQoLDA0ODw$x",
+	    "$knot$v1$c4$",
+	    "$knot$v1$c4$AAECAwQFBgcICQoLDA0ODw",
+	    "$knot$v1$c4$short$x",
+	    "$knot$v1$c4$AAECAwQFBgcICQoLDA0ODw$",
+	    "$knot$v1$c4$AAECAwQFBgcICQoLDA0ODw$short",
+	    "$knot$v1$c4$AAECAwQFBgcICQoLDA0ODw$JeuGrMduQwGPGLmo-Qwv7UYtHHmeg9SK49fGkEamC2c$extra",
+	};
+	for (const char *badHash : badHashes) {
+		result = zek::knot::internal::parseHash(badHash, parsed);
+		expect(!result, "parse hash malformed fuzz case");
+	}
+
+	char oversizedSalt[160] = {};
+	std::snprintf(
+	    oversizedSalt,
+	    sizeof(oversizedSalt),
+	    "$knot$v1$c4$AAECAwQFBgcICQoLDA0ODwAA$JeuGrMduQwGPGLmo-Qwv7UYtHHmeg9SK49fGkEamC2c"
+	);
+	result = zek::knot::internal::parseHash(oversizedSalt, parsed);
+	expect(!result && result.code == KnotCode::InvalidHash, "parse hash oversized salt");
+
+	char oversizedHash[160] = {};
+	std::snprintf(
+	    oversizedHash,
+	    sizeof(oversizedHash),
+	    "$knot$v1$c4$AAECAwQFBgcICQoLDA0ODw$JeuGrMduQwGPGLmo-Qwv7UYtHHmeg9SK49fGkEamC2cAA"
+	);
+	result = zek::knot::internal::parseHash(oversizedHash, parsed);
+	expect(!result && result.code == KnotCode::InvalidHash, "parse hash oversized hash");
 }
 
 void testCryptoBoundary() {
@@ -271,6 +330,125 @@ void testPublicApi() {
 	result = knot.deinit();
 	expect(result && !knot.initialized(), "deinit succeeds");
 }
+
+void testPublicApiEdgeCases() {
+	const char encodedSalt[] = "$knot$v1$c4$AAECAwQFBgcICQoLDA0ODw";
+	const char encodedHash[] =
+	    "$knot$v1$c4$AAECAwQFBgcICQoLDA0ODw$JeuGrMduQwGPGLmo-Qwv7UYtHHmeg9SK49fGkEamC2c";
+
+	Knot uninitialized;
+	KnotHashResult hash = uninitialized.hash("password", encodedSalt);
+	expect(!hash && hash.code == KnotCode::NotInitialized, "uninitialized hash");
+	KnotCompareResult compare = uninitialized.compare("password", encodedHash);
+	expect(!compare && compare.code == KnotCode::NotInitialized, "uninitialized compare");
+	KnotSaltResult salt = uninitialized.genSalt(4);
+	expect(!salt && salt.code == KnotCode::NotInitialized, "uninitialized genSalt");
+	expect(uninitialized.needsRehash(encodedHash), "uninitialized needs rehash");
+
+	Knot knot;
+	KnotConfig config;
+	config.defaultCost = 4;
+	config.minCost = 4;
+	config.maxCost = 6;
+	KnotResult result = knot.init(config);
+	expect(static_cast<bool>(result), "edge init succeeds");
+
+	hash = knot.hash(static_cast<const char *>(nullptr), encodedSalt);
+	expect(!hash && hash.code == KnotCode::InvalidArgument, "null c-string password");
+	hash = knot.hash(static_cast<const uint8_t *>(nullptr), 0, encodedSalt);
+	expect(!hash && hash.code == KnotCode::InvalidArgument, "null empty byte password");
+	compare = knot.compare(static_cast<const char *>(nullptr), encodedHash);
+	expect(!compare && compare.code == KnotCode::InvalidArgument, "null compare password");
+	compare = knot.compare("password", nullptr);
+	expect(!compare && compare.code == KnotCode::InvalidHash, "null compare hash");
+
+	uint8_t emptyPassword = 0;
+	hash = knot.hash(&emptyPassword, 0, encodedSalt);
+	expect(static_cast<bool>(hash), "empty byte password hashes");
+	compare = knot.compare(&emptyPassword, 0, hash.value);
+	expect(compare && compare.match, "empty byte password compares");
+	hash = knot.hash("", encodedSalt);
+	expect(static_cast<bool>(hash), "empty c-string password hashes");
+	compare = knot.compare("", hash.value);
+	expect(compare && compare.match, "empty c-string password compares");
+
+	uint8_t binaryPassword[] = {'p', 'a', 0x00, 's', 's'};
+	hash = knot.hash(binaryPassword, sizeof(binaryPassword), encodedSalt);
+	expect(static_cast<bool>(hash), "binary password hashes");
+	compare = knot.compare(binaryPassword, sizeof(binaryPassword), hash.value);
+	expect(compare && compare.match, "binary password compares");
+	compare = knot.compare("pa", hash.value);
+	expect(compare && !compare.match, "binary password differs from truncated c-string");
+
+	uint8_t maxPassword[KNOT_MAX_PASSWORD_LENGTH] = {};
+	for (size_t i = 0; i < sizeof(maxPassword); i++) {
+		maxPassword[i] = static_cast<uint8_t>('a' + (i % 26));
+	}
+	hash = knot.hash(maxPassword, sizeof(maxPassword), encodedSalt);
+	expect(static_cast<bool>(hash), "max length password hashes");
+	uint8_t tooLongPassword[KNOT_MAX_PASSWORD_LENGTH + 1] = {};
+	hash = knot.hash(tooLongPassword, sizeof(tooLongPassword), encodedSalt);
+	expect(!hash && hash.code == KnotCode::PasswordTooLong, "over max length password rejected");
+
+	char exactSalt[sizeof(encodedSalt)] = {};
+	result = knot.genSaltTo(4, exactSalt, sizeof(exactSalt));
+	expect(result && std::strlen(exactSalt) == std::strlen(encodedSalt), "exact salt buffer");
+	char exactHash[sizeof(encodedHash)] = {};
+	result = knot.hashTo("password", encodedSalt, exactHash, sizeof(exactHash));
+	expect(result && std::strcmp(exactHash, encodedHash) == 0, "exact hash buffer");
+
+	Knot noConstantTime;
+	KnotConfig noConstantTimeConfig;
+	noConstantTimeConfig.defaultCost = 4;
+	noConstantTimeConfig.minCost = 4;
+	noConstantTimeConfig.maxCost = 6;
+	noConstantTimeConfig.useConstantTimeCompare = false;
+	result = noConstantTime.init(noConstantTimeConfig);
+	expect(static_cast<bool>(result), "non constant-time init");
+	compare = noConstantTime.compare("password", encodedHash);
+	expect(compare && compare.match, "non constant-time compare match");
+	compare = noConstantTime.compare("wrong", encodedHash);
+	expect(compare && !compare.match, "non constant-time compare mismatch");
+
+	char salts[8][KNOT_MAX_SALT_LENGTH + 1] = {};
+	bool duplicateSalt = false;
+	for (size_t i = 0; i < 8; i++) {
+		result = knot.genSaltTo(4, salts[i], sizeof(salts[i]));
+		expect(static_cast<bool>(result), "repeated genSalt succeeds");
+		for (size_t j = 0; j < i; j++) {
+			if (std::strcmp(salts[i], salts[j]) == 0) {
+				duplicateSalt = true;
+			}
+		}
+	}
+	expect(!duplicateSalt, "repeated genSalt uniqueness");
+
+	expect(knot.needsRehash(encodedHash, 3), "needsRehash invalid low target cost");
+	expect(knot.needsRehash(encodedHash, 7), "needsRehash invalid high target cost");
+}
+
+void testDefaultCostMigration() {
+	expect(KNOT_DEFAULT_COST == 14, "default cost is 14");
+	expect(zek::knot::internal::iterationsForCost(14) == 1024000UL, "cost 14 iterations");
+
+	Knot knot;
+	KnotResult result = knot.init();
+	expect(static_cast<bool>(result), "default init succeeds");
+
+	KnotSaltResult defaultSalt = knot.genSalt();
+	expect(static_cast<bool>(defaultSalt), "default genSalt succeeds");
+	zek::knot::internal::KnotParsedValue parsed;
+	result = zek::knot::internal::parseSalt(defaultSalt.value, parsed);
+	expect(result && parsed.cost == 14, "default genSalt uses cost 14");
+
+	const char *oldSalt = "$knot$v1$c10$AAECAwQFBgcICQoLDA0ODw";
+	KnotHashResult oldHash = knot.hash("password", oldSalt);
+	expect(static_cast<bool>(oldHash), "old cost 10 hash can be generated");
+	KnotCompareResult compare = knot.compare("password", oldHash.value);
+	expect(compare && compare.match, "old cost 10 hash still verifies");
+	expect(knot.needsRehash(oldHash.value), "old cost 10 hash needs default rehash");
+	expect(!knot.needsRehash(oldHash.value, 10), "old cost 10 hash does not need cost 10 rehash");
+}
 } // namespace
 
 int main() {
@@ -278,6 +456,8 @@ int main() {
 	testFormat();
 	testCryptoBoundary();
 	testPublicApi();
+	testPublicApiEdgeCases();
+	testDefaultCostMigration();
 
 	if (failureCount != 0) {
 		std::printf("%d host tests failed\n", failureCount);

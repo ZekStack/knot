@@ -50,7 +50,7 @@ if (check.match) {
 Knot v0.1 writes hashes like this:
 
 ```txt
-$knot$v1$c10$<base64url-salt>$<base64url-derived-key>
+$knot$v1$c14$<base64url-salt>$<base64url-derived-key>
 ```
 
 The hash contains the algorithm marker, version, cost, salt, and derived key. Do not store salts separately.

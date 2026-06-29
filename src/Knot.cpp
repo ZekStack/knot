@@ -38,13 +38,11 @@ KnotResult validateCost(const KnotConfig &config, uint8_t cost) {
 	return KnotResult::success();
 }
 
-KnotResult validatePassword(const KnotConfig &config, const char *password, size_t &passwordSize) {
-	passwordSize = 0;
+KnotResult validatePassword(const KnotConfig &config, const uint8_t *password, size_t passwordSize) {
 	if (password == nullptr) {
 		return KnotResult::failure(KnotCode::InvalidArgument, "password is required");
 	}
 
-	passwordSize = std::strlen(password);
 	if (passwordSize > config.maxPasswordLength) {
 		return KnotResult::failure(KnotCode::PasswordTooLong, "password is too long");
 	}
@@ -67,14 +65,14 @@ void copyResult(KnotResult &target, const KnotResult &source) {
 }
 
 KnotResult deriveHash(
-    const char *password,
+    const uint8_t *password,
     size_t passwordSize,
     uint8_t cost,
     const uint8_t *salt,
     uint8_t *hash
 ) {
 	return internal::pbkdf2Sha256(
-	    reinterpret_cast<const uint8_t *>(password),
+	    password,
 	    passwordSize,
 	    salt,
 	    KNOT_RAW_SALT_LENGTH,
@@ -86,7 +84,8 @@ KnotResult deriveHash(
 
 KnotResult hashWithSalt(
     const KnotConfig &config,
-    const char *password,
+    const uint8_t *password,
+    size_t passwordSize,
     uint8_t cost,
     const uint8_t *salt,
     char *output,
@@ -96,7 +95,6 @@ KnotResult hashWithSalt(
 		return KnotResult::failure(KnotCode::InvalidArgument, "hash output is required");
 	}
 
-	size_t passwordSize = 0;
 	KnotResult result = validatePassword(config, password, passwordSize);
 	if (!result) {
 		output[0] = '\0';
@@ -115,6 +113,147 @@ KnotResult hashWithSalt(
 	result = internal::encodeHash(cost, salt, derived, output, outputSize, written);
 	internal::secureZero(derived, sizeof(derived));
 	return result;
+}
+
+KnotResult genSaltToLocked(KnotImpl &impl, uint8_t cost, char *output, size_t outputSize) {
+	KnotResult result = ensureReady(&impl);
+	if (!result) {
+		return result;
+	}
+	result = validateCost(impl.config, cost);
+	if (!result) {
+		return result;
+	}
+
+	uint8_t salt[KNOT_RAW_SALT_LENGTH] = {};
+	result = internal::randomBytes(salt, sizeof(salt));
+	if (!result) {
+		internal::secureZero(salt, sizeof(salt));
+		return result;
+	}
+
+	size_t written = 0;
+	result = internal::encodeSalt(cost, salt, output, outputSize, written);
+	internal::secureZero(salt, sizeof(salt));
+	return result;
+}
+
+KnotResult hashToCostLocked(
+    KnotImpl &impl,
+    const uint8_t *password,
+    size_t passwordSize,
+    uint8_t cost,
+    char *output,
+    size_t outputSize
+) {
+	KnotResult result = ensureReady(&impl);
+	if (!result) {
+		return result;
+	}
+	result = validateCost(impl.config, cost);
+	if (!result) {
+		return result;
+	}
+
+	uint8_t salt[KNOT_RAW_SALT_LENGTH] = {};
+	result = internal::randomBytes(salt, sizeof(salt));
+	if (!result) {
+		internal::secureZero(salt, sizeof(salt));
+		return result;
+	}
+
+	result = hashWithSalt(impl.config, password, passwordSize, cost, salt, output, outputSize);
+	internal::secureZero(salt, sizeof(salt));
+	return result;
+}
+
+KnotResult hashToSaltLocked(
+    KnotImpl &impl,
+    const uint8_t *password,
+    size_t passwordSize,
+    const char *encodedSalt,
+    char *output,
+    size_t outputSize
+) {
+	KnotResult result = ensureReady(&impl);
+	if (!result) {
+		return result;
+	}
+
+	internal::KnotParsedValue parsed;
+	result = internal::parseSalt(encodedSalt, parsed);
+	if (!result) {
+		return result;
+	}
+	result = validateCost(impl.config, parsed.cost);
+	if (!result) {
+		return result;
+	}
+
+	return hashWithSalt(impl.config, password, passwordSize, parsed.cost, parsed.salt, output, outputSize);
+}
+
+KnotCompareResult compareLocked(
+    KnotImpl &impl,
+    const uint8_t *password,
+    size_t passwordSize,
+    const char *encodedHash
+) {
+	KnotCompareResult result;
+	KnotResult base = ensureReady(&impl);
+	if (!base) {
+		copyResult(result, base);
+		return result;
+	}
+
+	internal::KnotParsedValue parsed;
+	base = internal::parseHash(encodedHash, parsed);
+	if (!base) {
+		copyResult(result, base);
+		return result;
+	}
+	base = validateCost(impl.config, parsed.cost);
+	if (!base) {
+		copyResult(result, base);
+		return result;
+	}
+
+	base = validatePassword(impl.config, password, passwordSize);
+	if (!base) {
+		copyResult(result, base);
+		return result;
+	}
+
+	uint8_t derived[KNOT_RAW_HASH_LENGTH] = {};
+	base = deriveHash(password, passwordSize, parsed.cost, parsed.salt, derived);
+	if (!base) {
+		copyResult(result, base);
+		internal::secureZero(derived, sizeof(derived));
+		return result;
+	}
+
+	result.match = impl.config.useConstantTimeCompare
+	    ? internal::constantTimeEqual(derived, parsed.hash, sizeof(derived))
+	    : std::memcmp(derived, parsed.hash, sizeof(derived)) == 0;
+	internal::secureZero(derived, sizeof(derived));
+	copyResult(result, KnotResult::success());
+	return result;
+}
+
+bool needsRehashLocked(const KnotImpl &impl, const char *encodedHash, uint8_t targetCost) {
+	if (!impl.initialized) {
+		return true;
+	}
+	if (targetCost < impl.config.minCost || targetCost > impl.config.maxCost) {
+		return true;
+	}
+
+	internal::KnotParsedValue parsed;
+	KnotResult result = internal::parseHash(encodedHash, parsed);
+	if (!result) {
+		return true;
+	}
+	return parsed.cost < targetCost;
 }
 
 } // namespace
@@ -165,7 +304,15 @@ KnotResult Knot::deinit() {
 }
 
 bool Knot::initialized() const {
-	return _impl != nullptr && _impl->initialized;
+	if (_impl == nullptr) {
+		return false;
+	}
+
+	KnotLock lock(_impl->mutex, _impl->config.useMutex);
+	if (!lock) {
+		return false;
+	}
+	return _impl->initialized;
 }
 
 KnotSaltResult Knot::genSalt() {
@@ -198,11 +345,43 @@ KnotHashResult Knot::hash(const char *password, const char *encodedSalt) {
 	return result;
 }
 
+KnotHashResult Knot::hash(const uint8_t *password, size_t passwordLen) {
+	KnotHashResult result;
+	copyResult(result, hashTo(password, passwordLen, result.value, sizeof(result.value)));
+	return result;
+}
+
+KnotHashResult Knot::hash(const uint8_t *password, size_t passwordLen, uint8_t cost) {
+	KnotHashResult result;
+	copyResult(result, hashTo(password, passwordLen, cost, result.value, sizeof(result.value)));
+	return result;
+}
+
+KnotHashResult Knot::hash(
+    const uint8_t *password,
+    size_t passwordLen,
+    const char *encodedSalt
+) {
+	KnotHashResult result;
+	copyResult(result, hashTo(password, passwordLen, encodedSalt, result.value, sizeof(result.value)));
+	return result;
+}
+
 KnotResult Knot::genSaltTo(char *output, size_t outputSize) {
 	if (_impl == nullptr) {
 		return KnotResult::failure(KnotCode::InternalError, "knot allocation failed");
 	}
-	return genSaltTo(_impl->config.defaultCost, output, outputSize);
+	if (output == nullptr || outputSize == 0) {
+		return KnotResult::failure(KnotCode::InvalidArgument, "salt output is required");
+	}
+	output[0] = '\0';
+
+	KnotLock lock(_impl->mutex, _impl->config.useMutex);
+	if (!lock) {
+		return KnotResult::failure(KnotCode::InternalError, "failed to lock knot");
+	}
+
+	return genSaltToLocked(*_impl, _impl->config.defaultCost, output, outputSize);
 }
 
 KnotResult Knot::genSaltTo(uint8_t cost, char *output, size_t outputSize) {
@@ -219,36 +398,41 @@ KnotResult Knot::genSaltTo(uint8_t cost, char *output, size_t outputSize) {
 		return KnotResult::failure(KnotCode::InternalError, "failed to lock knot");
 	}
 
-	KnotResult result = ensureReady(_impl.get());
-	if (!result) {
-		return result;
-	}
-	result = validateCost(_impl->config, cost);
-	if (!result) {
-		return result;
-	}
-
-	uint8_t salt[KNOT_RAW_SALT_LENGTH] = {};
-	result = internal::randomBytes(salt, sizeof(salt));
-	if (!result) {
-		internal::secureZero(salt, sizeof(salt));
-		return result;
-	}
-
-	size_t written = 0;
-	result = internal::encodeSalt(cost, salt, output, outputSize, written);
-	internal::secureZero(salt, sizeof(salt));
-	return result;
+	return genSaltToLocked(*_impl, cost, output, outputSize);
 }
 
 KnotResult Knot::hashTo(const char *password, char *output, size_t outputSize) {
-	if (_impl == nullptr) {
-		return KnotResult::failure(KnotCode::InternalError, "knot allocation failed");
-	}
-	return hashTo(password, _impl->config.defaultCost, output, outputSize);
+	const size_t passwordSize = password == nullptr ? 0 : std::strlen(password);
+	return hashTo(reinterpret_cast<const uint8_t *>(password), passwordSize, output, outputSize);
 }
 
 KnotResult Knot::hashTo(const char *password, uint8_t cost, char *output, size_t outputSize) {
+	const size_t passwordSize = password == nullptr ? 0 : std::strlen(password);
+	return hashTo(reinterpret_cast<const uint8_t *>(password), passwordSize, cost, output, outputSize);
+}
+
+KnotResult Knot::hashTo(
+    const char *password,
+    const char *encodedSalt,
+    char *output,
+    size_t outputSize
+) {
+	const size_t passwordSize = password == nullptr ? 0 : std::strlen(password);
+	return hashTo(
+	    reinterpret_cast<const uint8_t *>(password),
+	    passwordSize,
+	    encodedSalt,
+	    output,
+	    outputSize
+	);
+}
+
+KnotResult Knot::hashTo(
+    const uint8_t *password,
+    size_t passwordLen,
+    char *output,
+    size_t outputSize
+) {
 	if (_impl == nullptr) {
 		return KnotResult::failure(KnotCode::InternalError, "knot allocation failed");
 	}
@@ -262,29 +446,35 @@ KnotResult Knot::hashTo(const char *password, uint8_t cost, char *output, size_t
 		return KnotResult::failure(KnotCode::InternalError, "failed to lock knot");
 	}
 
-	KnotResult result = ensureReady(_impl.get());
-	if (!result) {
-		return result;
-	}
-	result = validateCost(_impl->config, cost);
-	if (!result) {
-		return result;
-	}
-
-	uint8_t salt[KNOT_RAW_SALT_LENGTH] = {};
-	result = internal::randomBytes(salt, sizeof(salt));
-	if (!result) {
-		internal::secureZero(salt, sizeof(salt));
-		return result;
-	}
-
-	result = hashWithSalt(_impl->config, password, cost, salt, output, outputSize);
-	internal::secureZero(salt, sizeof(salt));
-	return result;
+	return hashToCostLocked(*_impl, password, passwordLen, _impl->config.defaultCost, output, outputSize);
 }
 
 KnotResult Knot::hashTo(
-    const char *password,
+    const uint8_t *password,
+    size_t passwordLen,
+    uint8_t cost,
+    char *output,
+    size_t outputSize
+) {
+	if (_impl == nullptr) {
+		return KnotResult::failure(KnotCode::InternalError, "knot allocation failed");
+	}
+	if (output == nullptr || outputSize == 0) {
+		return KnotResult::failure(KnotCode::InvalidArgument, "hash output is required");
+	}
+	output[0] = '\0';
+
+	KnotLock lock(_impl->mutex, _impl->config.useMutex);
+	if (!lock) {
+		return KnotResult::failure(KnotCode::InternalError, "failed to lock knot");
+	}
+
+	return hashToCostLocked(*_impl, password, passwordLen, cost, output, outputSize);
+}
+
+KnotResult Knot::hashTo(
+    const uint8_t *password,
+    size_t passwordLen,
     const char *encodedSalt,
     char *output,
     size_t outputSize
@@ -302,25 +492,19 @@ KnotResult Knot::hashTo(
 		return KnotResult::failure(KnotCode::InternalError, "failed to lock knot");
 	}
 
-	KnotResult result = ensureReady(_impl.get());
-	if (!result) {
-		return result;
-	}
-
-	internal::KnotParsedValue parsed;
-	result = internal::parseSalt(encodedSalt, parsed);
-	if (!result) {
-		return result;
-	}
-	result = validateCost(_impl->config, parsed.cost);
-	if (!result) {
-		return result;
-	}
-
-	return hashWithSalt(_impl->config, password, parsed.cost, parsed.salt, output, outputSize);
+	return hashToSaltLocked(*_impl, password, passwordLen, encodedSalt, output, outputSize);
 }
 
 KnotCompareResult Knot::compare(const char *password, const char *encodedHash) {
+	const size_t passwordSize = password == nullptr ? 0 : std::strlen(password);
+	return compare(reinterpret_cast<const uint8_t *>(password), passwordSize, encodedHash);
+}
+
+KnotCompareResult Knot::compare(
+    const uint8_t *password,
+    size_t passwordLen,
+    const char *encodedHash
+) {
 	KnotCompareResult result;
 	if (_impl == nullptr) {
 		copyResult(result, KnotResult::failure(KnotCode::InternalError, "knot allocation failed"));
@@ -333,45 +517,7 @@ KnotCompareResult Knot::compare(const char *password, const char *encodedHash) {
 		return result;
 	}
 
-	KnotResult base = ensureReady(_impl.get());
-	if (!base) {
-		copyResult(result, base);
-		return result;
-	}
-
-	internal::KnotParsedValue parsed;
-	base = internal::parseHash(encodedHash, parsed);
-	if (!base) {
-		copyResult(result, base);
-		return result;
-	}
-	base = validateCost(_impl->config, parsed.cost);
-	if (!base) {
-		copyResult(result, base);
-		return result;
-	}
-
-	size_t passwordSize = 0;
-	base = validatePassword(_impl->config, password, passwordSize);
-	if (!base) {
-		copyResult(result, base);
-		return result;
-	}
-
-	uint8_t derived[KNOT_RAW_HASH_LENGTH] = {};
-	base = deriveHash(password, passwordSize, parsed.cost, parsed.salt, derived);
-	if (!base) {
-		copyResult(result, base);
-		internal::secureZero(derived, sizeof(derived));
-		return result;
-	}
-
-	result.match = _impl->config.useConstantTimeCompare
-	    ? internal::constantTimeEqual(derived, parsed.hash, sizeof(derived))
-	    : std::memcmp(derived, parsed.hash, sizeof(derived)) == 0;
-	internal::secureZero(derived, sizeof(derived));
-	copyResult(result, KnotResult::success());
-	return result;
+	return compareLocked(*_impl, password, passwordLen, encodedHash);
 }
 
 KnotRoundsResult Knot::getRounds(const char *encodedHash) {
@@ -408,26 +554,27 @@ KnotInfoResult Knot::getInfo(const char *encodedHash) {
 }
 
 bool Knot::needsRehash(const char *encodedHash) const {
-	if (_impl == nullptr || !_impl->initialized) {
+	if (_impl == nullptr) {
 		return true;
 	}
-	return needsRehash(encodedHash, _impl->config.defaultCost);
+
+	KnotLock lock(_impl->mutex, _impl->config.useMutex);
+	if (!lock) {
+		return true;
+	}
+	return needsRehashLocked(*_impl, encodedHash, _impl->config.defaultCost);
 }
 
 bool Knot::needsRehash(const char *encodedHash, uint8_t targetCost) const {
-	if (_impl == nullptr || !_impl->initialized) {
-		return true;
-	}
-	if (targetCost < _impl->config.minCost || targetCost > _impl->config.maxCost) {
+	if (_impl == nullptr) {
 		return true;
 	}
 
-	internal::KnotParsedValue parsed;
-	KnotResult result = internal::parseHash(encodedHash, parsed);
-	if (!result) {
+	KnotLock lock(_impl->mutex, _impl->config.useMutex);
+	if (!lock) {
 		return true;
 	}
-	return parsed.cost < targetCost;
+	return needsRehashLocked(*_impl, encodedHash, targetCost);
 }
 
 const char *Knot::codeToString(KnotCode code) const {

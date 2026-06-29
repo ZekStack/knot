@@ -60,9 +60,32 @@ jobs:
             -o /tmp/knot-host-tests
           /tmp/knot-host-tests
 
+  host-sanitizer-tests:
+    runs-on: ubuntu-latest
+    needs: source-audit
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and run host sanitizer tests
+        run: |
+          g++ -std=c++20 -Wall -Wextra -pedantic \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Itests/host/stubs \
+            -Isrc \
+            src/Knot.cpp \
+            src/internal/KnotBase64Url.cpp \
+            src/internal/KnotCrypto.cpp \
+            src/internal/KnotFormat.cpp \
+            tests/host/KnotCryptoHostOpenSsl.cpp \
+            tests/host/test_knot_internals.cpp \
+            -lcrypto \
+            -o /tmp/knot-host-sanitizer-tests
+          ASAN_OPTIONS=detect_leaks=0 /tmp/knot-host-sanitizer-tests
+
   build-examples:
     runs-on: ubuntu-latest
-    needs: [source-audit, host-internal-tests]
+    needs: [source-audit, host-internal-tests, host-sanitizer-tests]
     strategy:
       fail-fast: false
       matrix:
@@ -109,7 +132,7 @@ jobs:
 
   arduino-cli:
     runs-on: ubuntu-latest
-    needs: [source-audit, host-internal-tests]
+    needs: [source-audit, host-internal-tests, host-sanitizer-tests]
     strategy:
       fail-fast: false
       matrix:

@@ -16,13 +16,20 @@ KnotResult result = knot.init();
 
 ```cpp
 KnotHashResult hash = knot.hash("password");
-KnotHashResult hash = knot.hash("password", 12);
+KnotHashResult hash = knot.hash("password", 14);
 KnotHashResult hash = knot.hash("password", encodedSalt);
+
+const uint8_t password[] = {'p', 'a', 0x00, 's', 's'};
+KnotHashResult binaryHash = knot.hash(password, sizeof(password), 14);
 ```
 
 `hash(password)` and `hash(password, cost)` generate a fresh salt internally.
 
 `hash(password, encodedSalt)` uses a salt produced by `genSalt()` or `genSalt(cost)`.
+
+The `const char *` overloads hash bytes up to the first NUL byte. The `const uint8_t *` plus length overloads are binary-safe and can hash embedded NUL bytes.
+
+`nullptr` passwords are invalid, including `nullptr, 0`. Empty passwords are valid with `hash("")` or a non-null byte pointer and length `0`.
 
 ## Salt generation
 
@@ -45,12 +52,14 @@ KnotResult saltResult = knot.genSaltTo(10, salt, sizeof(salt));
 
 char hash[KNOT_MAX_HASH_LENGTH + 1];
 KnotResult hashResult = knot.hashTo("password", salt, hash, sizeof(hash));
+KnotResult binaryResult = knot.hashTo(password, sizeof(password), 12, hash, sizeof(hash));
 ```
 
 ## Compare
 
 ```cpp
 KnotCompareResult check = knot.compare("password", storedHash);
+KnotCompareResult binaryCheck = knot.compare(password, sizeof(password), storedHash);
 
 if (check && check.match) {
 	login();
@@ -72,12 +81,12 @@ KnotInfoResult info = knot.getInfo(storedHash);
 ## Rehash
 
 ```cpp
-if (knot.needsRehash(storedHash, 12)) {
-	KnotHashResult upgraded = knot.hash(password, 12);
+if (knot.needsRehash(storedHash, 14)) {
+	KnotHashResult upgraded = knot.hash(password, 14);
 }
 ```
 
-Invalid, unsupported, old-version, or lower-cost hashes return `true`.
+Invalid hashes, unsupported algorithms, unsupported versions, invalid target costs, and lower-cost hashes return `true`. Same-cost and higher-cost hashes return `false`.
 
 ## Result codes
 

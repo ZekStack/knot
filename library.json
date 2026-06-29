@@ -1,7 +1,7 @@
 {
   "name": "Knot",
   "version": "0.0.1",
-  "description": "Bcrypt-style password hashing library for ESP32.",
+  "description": "Compact ESP32 password hashing library with a bcrypt-like self-contained hash string format backed by PBKDF2-HMAC-SHA256.",
   "keywords": [
     "esp32",
     "password",

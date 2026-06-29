@@ -10,7 +10,7 @@ void setup() {
 	Serial.begin(115200);
 
 	KnotConfig config;
-	config.defaultCost = 10;
+	config.defaultCost = 4;
 
 	KnotResult init = knot.init(config);
 	if (!init) {
@@ -18,7 +18,7 @@ void setup() {
 		return;
 	}
 
-	KnotHashResult initial = knot.hash("password", 8);
+	KnotHashResult initial = knot.hash("password", 4);
 	if (!initial) {
 		Serial.println(initial.message);
 		return;
@@ -37,6 +37,8 @@ void setup() {
 			strncpy(storedHash, upgraded.value, sizeof(storedHash) - 1);
 			Serial.println("hash upgraded");
 		}
+	} else {
+		Serial.println("hash is current");
 	}
 }
 
