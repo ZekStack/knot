@@ -155,7 +155,7 @@ For the full API, see [`docs/api.md`](docs/api.md).
 | PSRAM | not used in v0.1 |
 | Dependencies | mbedTLS from ESP32 platform |
 | Exceptions | Not used |
-| Status | Early-stage `0.0.1` |
+| Status | Early-stage `0.1.0` |
 
 ## Configuration
 
