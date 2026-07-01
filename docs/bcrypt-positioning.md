@@ -25,7 +25,7 @@ It does not produce bcrypt hashes and it does not verify bcrypt hashes.
 Knot-owned format:
 
 ```txt
-$knot$v1$c10$<salt>$<hash>
+$knot$v1$c<cost>$<salt>$<hash>
 ```
 
 Bcrypt prefixes are reserved for actual bcrypt implementations:

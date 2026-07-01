@@ -355,10 +355,27 @@ void testPublicApiEdgeCases() {
 
 	hash = knot.hash(static_cast<const char *>(nullptr), encodedSalt);
 	expect(!hash && hash.code == KnotCode::InvalidArgument, "null c-string password");
+	hash = knot.hash(static_cast<const char *>(nullptr), static_cast<uint8_t>(3));
+	expect(!hash && hash.code == KnotCode::InvalidArgument, "null password before invalid cost");
+	hash = knot.hash(static_cast<const char *>(nullptr), static_cast<const char *>(nullptr));
+	expect(!hash && hash.code == KnotCode::InvalidArgument, "null password before null salt");
+	hash = knot.hash(static_cast<const char *>(nullptr), "bad-salt");
+	expect(!hash && hash.code == KnotCode::InvalidArgument, "null password before bad salt");
 	hash = knot.hash(static_cast<const uint8_t *>(nullptr), 0, encodedSalt);
 	expect(!hash && hash.code == KnotCode::InvalidArgument, "null empty byte password");
+	char nullHashOutput[KNOT_MAX_HASH_LENGTH + 1] = {};
+	nullHashOutput[0] = 'x';
+	result = knot.hashTo(static_cast<const char *>(nullptr), encodedSalt, nullHashOutput, sizeof(nullHashOutput));
+	expect(
+	    !result && result.code == KnotCode::InvalidArgument && nullHashOutput[0] == '\0',
+	    "null hashTo password clears output"
+	);
 	compare = knot.compare(static_cast<const char *>(nullptr), encodedHash);
 	expect(!compare && compare.code == KnotCode::InvalidArgument, "null compare password");
+	compare = knot.compare(static_cast<const char *>(nullptr), static_cast<const char *>(nullptr));
+	expect(!compare && compare.code == KnotCode::InvalidArgument, "null password before null hash");
+	compare = knot.compare(static_cast<const char *>(nullptr), "bad-hash");
+	expect(!compare && compare.code == KnotCode::InvalidArgument, "null password before bad hash");
 	compare = knot.compare("password", nullptr);
 	expect(!compare && compare.code == KnotCode::InvalidHash, "null compare hash");
 
@@ -389,6 +406,28 @@ void testPublicApiEdgeCases() {
 	uint8_t tooLongPassword[KNOT_MAX_PASSWORD_LENGTH + 1] = {};
 	hash = knot.hash(tooLongPassword, sizeof(tooLongPassword), encodedSalt);
 	expect(!hash && hash.code == KnotCode::PasswordTooLong, "over max length password rejected");
+
+	Knot shortLimit;
+	KnotConfig shortLimitConfig;
+	shortLimitConfig.defaultCost = 4;
+	shortLimitConfig.minCost = 4;
+	shortLimitConfig.maxCost = 6;
+	shortLimitConfig.maxPasswordLength = 4;
+	result = shortLimit.init(shortLimitConfig);
+	expect(static_cast<bool>(result), "short limit init succeeds");
+	char tooLongCString[5] = {'a', 'b', 'c', 'd', 'e'};
+	hash = shortLimit.hash(tooLongCString, encodedSalt);
+	expect(!hash && hash.code == KnotCode::PasswordTooLong, "bounded c-string hash rejects over limit");
+	hash = shortLimit.hash(tooLongCString, static_cast<uint8_t>(3));
+	expect(
+	    !hash && hash.code == KnotCode::PasswordTooLong,
+	    "bounded c-string password before invalid cost"
+	);
+	compare = shortLimit.compare(tooLongCString, encodedHash);
+	expect(
+	    !compare && compare.code == KnotCode::PasswordTooLong,
+	    "bounded c-string compare rejects over limit"
+	);
 
 	char exactSalt[sizeof(encodedSalt)] = {};
 	result = knot.genSaltTo(4, exactSalt, sizeof(exactSalt));

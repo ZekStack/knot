@@ -2,6 +2,8 @@
 
 Knot is an early-stage ESP32 password hashing library. Review the implementation, benchmark it on target hardware, and choose cost settings deliberately before using it in production firmware.
 
+For current password storage guidance, see the [OWASP Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html) and [NIST SP 800-63B](https://pages.nist.gov/800-63-4/sp800-63b.html).
+
 ## Threat model
 
 Knot is intended for local device login and constrained firmware flows where an ESP32 verifies a password-derived hash locally.
@@ -42,4 +44,3 @@ Include:
 * reproduction steps
 * target board and framework version if ESP32-specific
 * expected and actual behavior
-

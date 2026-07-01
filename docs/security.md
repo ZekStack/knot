@@ -2,7 +2,7 @@
 
 Knot is for password hashing, not encryption.
 
-OWASP currently prefers Argon2id for password storage, then scrypt. PBKDF2-HMAC-SHA256 is mainly the fallback path when Argon2id or scrypt are not available or appropriate. Knot targets constrained ESP32 firmware where a compact PBKDF2-based implementation may be the practical option.
+OWASP currently prefers Argon2id for password storage, then scrypt. PBKDF2-HMAC-SHA256 is mainly the fallback path when Argon2id or scrypt are not available or appropriate. Knot targets constrained ESP32 firmware where a compact PBKDF2-based implementation may be the practical option. For current guidance, see the [OWASP Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html) and [NIST SP 800-63B](https://pages.nist.gov/800-63-4/sp800-63b.html).
 
 ## Store hashes only
 

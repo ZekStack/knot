@@ -27,6 +27,8 @@ KnotResult result = knot.init(config);
 
 `defaultCost` must be inside `[minCost, maxCost]`.
 
+`maxPasswordLength` is configurable downward in v0.1, but it cannot exceed `KNOT_MAX_PASSWORD_LENGTH` (`72`). `init()` rejects `0` and any value above that ceiling.
+
 ## Cost
 
 Cost is Knot's work factor. Higher cost means slower hashing and more expensive offline guessing.
