@@ -17,6 +17,7 @@
 namespace zek::knot {
 
 struct KnotImpl;
+struct KnotCompareOperationImpl;
 
 enum class KnotCode : uint8_t {
 	Ok,
@@ -33,6 +34,7 @@ enum class KnotCode : uint8_t {
 	UnsupportedVersion,
 	UnsupportedAlgorithm,
 	CryptoError,
+	Cancelled,
 	InternalError,
 };
 
@@ -90,6 +92,52 @@ struct KnotInfoResult : KnotResult {
 	uint8_t cost = 0;
 };
 
+enum class KnotStepStatus : uint8_t {
+	Idle,
+	InProgress,
+	Complete,
+	Cancelled,
+	Failed,
+};
+
+struct KnotStepResult : KnotResult {
+	KnotStepStatus status = KnotStepStatus::Idle;
+	bool match = false;
+	uint32_t iterationsCompleted = 0;
+	uint32_t iterationsTotal = 0;
+
+	bool inProgress() const {
+		return code == KnotCode::Ok && status == KnotStepStatus::InProgress;
+	}
+
+	bool completed() const {
+		return code == KnotCode::Ok && status == KnotStepStatus::Complete;
+	}
+
+	bool cancelled() const {
+		return status == KnotStepStatus::Cancelled;
+	}
+};
+
+class KnotCompareOperation {
+  public:
+	KnotCompareOperation();
+	~KnotCompareOperation();
+
+	KnotCompareOperation(const KnotCompareOperation &) = delete;
+	KnotCompareOperation &operator=(const KnotCompareOperation &) = delete;
+	KnotCompareOperation(KnotCompareOperation &&) = delete;
+	KnotCompareOperation &operator=(KnotCompareOperation &&) = delete;
+
+	KnotStepResult step(uint32_t iterationBudget);
+	KnotResult cancel();
+	bool active() const;
+
+  private:
+	friend class Knot;
+	std::unique_ptr<KnotCompareOperationImpl> _impl;
+};
+
 class Knot {
   public:
 	Knot();
@@ -142,6 +190,18 @@ class Knot {
 	KnotCompareResult compare(const char *password, const char *encodedHash);
 	KnotCompareResult compare(const uint8_t *password, size_t passwordLen, const char *encodedHash);
 
+	KnotResult beginCompare(
+	    KnotCompareOperation &operation,
+	    const char *password,
+	    const char *encodedHash
+	);
+	KnotResult beginCompare(
+	    KnotCompareOperation &operation,
+	    const uint8_t *password,
+	    size_t passwordLen,
+	    const char *encodedHash
+	);
+
 	KnotRoundsResult getRounds(const char *encodedHash);
 	KnotRoundsResult getCost(const char *encodedHash);
 	KnotInfoResult getInfo(const char *encodedHash);
@@ -161,6 +221,7 @@ class Knot {
 #ifndef ZEK_KNOT_DISABLE_GLOBAL_ALIASES
 using Knot = zek::knot::Knot;
 using KnotCode = zek::knot::KnotCode;
+using KnotCompareOperation = zek::knot::KnotCompareOperation;
 using KnotCompareResult = zek::knot::KnotCompareResult;
 using KnotConfig = zek::knot::KnotConfig;
 using KnotHashResult = zek::knot::KnotHashResult;
@@ -168,4 +229,6 @@ using KnotInfoResult = zek::knot::KnotInfoResult;
 using KnotResult = zek::knot::KnotResult;
 using KnotRoundsResult = zek::knot::KnotRoundsResult;
 using KnotSaltResult = zek::knot::KnotSaltResult;
+using KnotStepResult = zek::knot::KnotStepResult;
+using KnotStepStatus = zek::knot::KnotStepStatus;
 #endif
