@@ -13,6 +13,7 @@ namespace zek::knot::internal {
 struct HmacSha256Context {
 	mbedtls_md_context_t context;
 	bool initialized = false;
+	bool needsReset = false;
 };
 
 KnotResult randomBytes(uint8_t *output, size_t outputSize) {
@@ -106,6 +107,7 @@ KnotResult hmacSha256Create(
 	}
 
 	created->initialized = true;
+	created->needsReset = false;
 	context = created;
 	return KnotResult::success();
 }
@@ -123,7 +125,10 @@ KnotResult hmacSha256Digest(
 		return KnotResult::failure(KnotCode::InvalidArgument, "invalid hmac input");
 	}
 
-	int rc = mbedtls_md_hmac_reset(&context->context);
+	int rc = 0;
+	if (context->needsReset) {
+		rc = mbedtls_md_hmac_reset(&context->context);
+	}
 	if (rc == 0 && inputSize != 0) {
 		rc = mbedtls_md_hmac_update(&context->context, input, inputSize);
 	}
@@ -133,6 +138,7 @@ KnotResult hmacSha256Digest(
 	if (rc != 0) {
 		return KnotResult::failure(KnotCode::HashFailed, "hmac calculation failed");
 	}
+	context->needsReset = true;
 	return KnotResult::success();
 }
 
