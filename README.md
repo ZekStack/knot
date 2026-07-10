@@ -2,7 +2,7 @@
 
 Knot is a compact ESP32 password hashing library with a bcrypt-like self-contained hash string format, backed by PBKDF2-HMAC-SHA256.
 
-Knot helps Arduino ESP32 projects create and verify self-contained password hashes with secure salt generation, cost-based PBKDF2-HMAC-SHA256 hashing, constant-time comparison, and bounded result buffers.
+Knot helps Arduino ESP32 projects create and verify self-contained password hashes with secure salt generation, cost-based PBKDF2-HMAC-SHA256 hashing, constant-time comparison, cooperative verification, and bounded result buffers.
 
 [![CI](https://github.com/ZekStack/knot/actions/workflows/ci.yml/badge.svg)](https://github.com/ZekStack/knot/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/ZekStack/knot?sort=semver)](https://github.com/ZekStack/knot/releases)
@@ -12,6 +12,7 @@ Knot helps Arduino ESP32 projects create and verify self-contained password hash
 
 * **Password-focused** - generate salts, hash passwords, compare stored hashes, and detect old costs.
 * **Self-contained hashes** - the encoded hash stores the algorithm marker, version, cost, salt, and derived key.
+* **Cooperative verification** - split PBKDF2 comparison into bounded steps for FreeRTOS and Worker integration.
 * **ESP32-friendly** - fixed public buffers, no exceptions, result-based errors, and optional mutex protection.
 * **Familiar API shape** - `genSalt()`, `hash()`, `compare()`, and `getRounds()` helpers without bcrypt compatibility claims.
 * **Clear compatibility** - Knot hashes are not bcrypt hashes and never use bcrypt `$2a$`, `$2b$`, or `$2y$` prefixes.
@@ -82,6 +83,27 @@ void loop() {
 }
 ```
 
+## Cooperative compare
+
+Use a stateful operation when verification must return control to FreeRTOS between bounded PBKDF2 slices.
+
+```cpp
+KnotCompareOperation operation;
+KnotResult begin = knot.beginCompare(operation, password, encodedHash);
+
+KnotStepResult step = operation.step(iterationBudget);
+while (step.inProgress()) {
+	vTaskDelay(1);
+	step = operation.step(iterationBudget);
+}
+
+if (step.completed() && step.match) {
+	login();
+}
+```
+
+Benchmark `iterationBudget` on the target and aim for the application's responsiveness window, normally around 5-20 ms per `step()`. Call `operation.cancel()` between steps when a request or Worker job is cancelled.
+
 ## Important notes
 
 > [!IMPORTANT]
@@ -91,13 +113,14 @@ void loop() {
 * `v1` means PBKDF2-HMAC-SHA256 with a 16-byte salt and 32-byte derived key.
 * Password input is limited to `KNOT_MAX_PASSWORD_LENGTH` bytes by default.
 * Cost 14 is the secure default, not the demo setting. Tune cost on real target hardware.
-* Hashing is synchronous. Offload it to a background task if your application cannot block.
+* `hash()` and `compare()` are synchronous convenience APIs. Use `beginCompare()` and `step()` for cooperative verification.
 
 ## Examples
 
 | Example | Description |
 | --- | --- |
 | `BasicHash` | Minimal init, hash, and compare. |
+| `CooperativeCompare` | Verify a hash through bounded PBKDF2 steps. |
 | `ExplicitCost` | Choose a cost and read rounds/cost. |
 | `ManualSalt` | Generate a salt and pass it into `hash()`. |
 | `CallerBuffer` | Use caller-owned buffers. |
