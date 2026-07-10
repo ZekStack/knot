@@ -34,7 +34,6 @@ enum class KnotCode : uint8_t {
 	UnsupportedVersion,
 	UnsupportedAlgorithm,
 	CryptoError,
-	Cancelled,
 	InternalError,
 };
 
