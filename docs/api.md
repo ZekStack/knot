@@ -91,7 +91,9 @@ while (step.inProgress()) {
 	step = operation.step(iterationBudget);
 }
 
-if (!step) {
+if (step.cancelled()) {
+	handleCancellation();
+} else if (!step) {
 	handleError(step);
 } else if (step.match) {
 	login();
@@ -127,7 +129,7 @@ Cancelled
 Failed
 ```
 
-Use `completed()`, `cancelled()`, and `inProgress()` to inspect the state. `iterationsCompleted` and `iterationsTotal` expose progress for diagnostics. An operation can be started again after completion, cancellation, or failure.
+Use `completed()`, `cancelled()`, and `inProgress()` to inspect the state. Cancellation is a successful terminal transition (`KnotCode::Ok`) with `KnotStepStatus::Cancelled`, so check `cancelled()` before treating a non-matching result as an invalid password. `iterationsCompleted` and `iterationsTotal` expose progress for diagnostics. An operation can be started again after completion, cancellation, or failure.
 
 Do not call `step()` and `cancel()` concurrently on the same operation from different tasks. Coordinate ownership through the calling task or Worker job.
 
