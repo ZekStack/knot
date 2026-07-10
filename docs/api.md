@@ -66,7 +66,72 @@ if (check && check.match) {
 }
 ```
 
-`compare()` returns success for a valid comparison operation even when `match` is false.
+`compare()` returns success for a valid comparison operation even when `match` is false. It remains a synchronous convenience API.
+
+## Cooperative compare
+
+Use `KnotCompareOperation` when password verification must return control to FreeRTOS between bounded PBKDF2 slices.
+
+```cpp
+KnotCompareOperation operation;
+
+KnotResult begin = knot.beginCompare(
+	operation,
+	"password",
+	storedHash
+);
+if (!begin) {
+	handleError(begin);
+	return;
+}
+
+KnotStepResult step = operation.step(iterationBudget);
+while (step.inProgress()) {
+	vTaskDelay(1);
+	step = operation.step(iterationBudget);
+}
+
+if (step.cancelled()) {
+	handleCancellation();
+} else if (!step) {
+	handleError(step);
+} else if (step.match) {
+	login();
+}
+```
+
+`iterationBudget` is the maximum number of PBKDF2 HMAC iterations performed by one `step()` call. Benchmark the target ESP32 and choose a budget that normally keeps each call near 5-20 ms.
+
+`beginCompare()` validates the inputs and copies the password, salt, expected hash, cost, and comparison configuration into the operation. Knot's global mutex is released before the iterative HMAC work begins. The operation can therefore sleep or be scheduled through Worker without retaining the Knot lock.
+
+The binary-safe overload is also available:
+
+```cpp
+KnotResult begin = knot.beginCompare(
+	operation,
+	password,
+	passwordLength,
+	storedHash
+);
+```
+
+Cancel between steps with:
+
+```cpp
+operation.cancel();
+```
+
+A terminal `KnotStepResult` has one of these statuses:
+
+```txt
+Complete
+Cancelled
+Failed
+```
+
+Use `completed()`, `cancelled()`, and `inProgress()` to inspect the state. Cancellation is a successful terminal transition (`KnotCode::Ok`) with `KnotStepStatus::Cancelled`, so check `cancelled()` before treating a non-matching result as an invalid password. `iterationsCompleted` and `iterationsTotal` expose progress for diagnostics. An operation can be started again after completion, cancellation, or failure.
+
+Do not call `step()` and `cancel()` concurrently on the same operation from different tasks. Coordinate ownership through the calling task or Worker job.
 
 ## Metadata
 

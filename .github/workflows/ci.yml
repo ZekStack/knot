@@ -33,7 +33,7 @@ jobs:
             echo "mbedTLS must stay behind the KnotCrypto backend boundary"
             exit 1
           fi
-          if grep -RInE '#include[[:space:]]+[<"](Fresh|Pulse|Signal|Tempo|Trace|Worker|Vault|Seal|Link|Courier|Flow|Lingo|Phase|Accord)\\.h[>"]' src; then
+          if grep -RInE '#include[[:space:]]+[<"](Fresh|Pulse|Signal|Tempo|Trace|Worker|Vault|Seal|Link|Courier|Flow|Lingo|Phase|Accord)\.h[>"]' src; then
             echo "Knot must not depend on other ZekStack libraries"
             exit 1
           fi
@@ -51,6 +51,7 @@ jobs:
             -Itests/host/stubs \
             -Isrc \
             src/Knot.cpp \
+            src/KnotCompareOperation.cpp \
             src/internal/KnotBase64Url.cpp \
             src/internal/KnotCrypto.cpp \
             src/internal/KnotFormat.cpp \
@@ -59,6 +60,20 @@ jobs:
             -lcrypto \
             -o /tmp/knot-host-tests
           /tmp/knot-host-tests
+
+          g++ -std=c++20 -Wall -Wextra -pedantic \
+            -Itests/host/stubs \
+            -Isrc \
+            src/Knot.cpp \
+            src/KnotCompareOperation.cpp \
+            src/internal/KnotBase64Url.cpp \
+            src/internal/KnotCrypto.cpp \
+            src/internal/KnotFormat.cpp \
+            tests/host/KnotCryptoHostOpenSsl.cpp \
+            tests/host/test_knot_cooperative.cpp \
+            -lcrypto \
+            -o /tmp/knot-cooperative-tests
+          /tmp/knot-cooperative-tests
 
   host-sanitizer-tests:
     runs-on: ubuntu-latest
@@ -74,6 +89,7 @@ jobs:
             -Itests/host/stubs \
             -Isrc \
             src/Knot.cpp \
+            src/KnotCompareOperation.cpp \
             src/internal/KnotBase64Url.cpp \
             src/internal/KnotCrypto.cpp \
             src/internal/KnotFormat.cpp \
@@ -82,6 +98,21 @@ jobs:
             -lcrypto \
             -o /tmp/knot-host-sanitizer-tests
           ASAN_OPTIONS=detect_leaks=0 /tmp/knot-host-sanitizer-tests
+
+          g++ -std=c++20 -Wall -Wextra -pedantic \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Itests/host/stubs \
+            -Isrc \
+            src/Knot.cpp \
+            src/KnotCompareOperation.cpp \
+            src/internal/KnotBase64Url.cpp \
+            src/internal/KnotCrypto.cpp \
+            src/internal/KnotFormat.cpp \
+            tests/host/KnotCryptoHostOpenSsl.cpp \
+            tests/host/test_knot_cooperative.cpp \
+            -lcrypto \
+            -o /tmp/knot-cooperative-sanitizer-tests
+          ASAN_OPTIONS=detect_leaks=0 /tmp/knot-cooperative-sanitizer-tests
 
   build-examples:
     runs-on: ubuntu-latest
