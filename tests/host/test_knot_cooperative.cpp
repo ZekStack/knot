@@ -12,6 +12,7 @@ void expect(bool value, const char *message) {
 	}
 }
 
+const char *knownSalt = "$knot$v1$c4$AAECAwQFBgcICQoLDA0ODw";
 const char *knownHash =
     "$knot$v1$c4$AAECAwQFBgcICQoLDA0ODw$JeuGrMduQwGPGLmo-Qwv7UYtHHmeg9SK49fGkEamC2c";
 
@@ -87,6 +88,24 @@ int main() {
 	expect(static_cast<bool>(knot2.init(config)), "second init");
 	begin = knot2.beginCompare(invalid, "password", "bad-hash");
 	expect(!begin && !invalid.active(), "invalid hash begin fails cleanly");
+
+	uint8_t binaryPassword[] = {'p', 'a', 0x00, 's', 's'};
+	KnotHashResult binaryHash = knot2.hash(binaryPassword, sizeof(binaryPassword), knownSalt);
+	expect(static_cast<bool>(binaryHash), "binary password hash");
+	KnotCompareOperation binaryOperation;
+	begin = knot2.beginCompare(
+	    binaryOperation,
+	    binaryPassword,
+	    sizeof(binaryPassword),
+	    binaryHash.value
+	);
+	expect(static_cast<bool>(begin), "binary begin");
+	result = run(binaryOperation, 19, steps);
+	expect(result.completed() && result.match, "binary cooperative match");
+	begin = knot2.beginCompare(binaryOperation, "pa", binaryHash.value);
+	expect(static_cast<bool>(begin), "truncated binary begin");
+	result = run(binaryOperation, 19, steps);
+	expect(result.completed() && !result.match, "binary differs from truncated string");
 
 	KnotCompareOperation zeroBudget;
 	begin = knot2.beginCompare(zeroBudget, "password", knownHash);
