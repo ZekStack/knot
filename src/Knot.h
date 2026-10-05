@@ -4,7 +4,6 @@
 #include <Strata.h>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 
 #define KNOT_DEFAULT_COST 14
 #define KNOT_MIN_COST 4
