@@ -99,7 +99,7 @@ jobs:
             echo "mbedTLS must stay behind the KnotCrypto backend boundary"
             exit 1
           fi
-          if grep -RInE '#include[[:space:]]+[<"](Fresh|Pulse|Signal|Tempo|Trace|Worker|Vault|Seal|Link|Courier|Flow|Lingo|Phase|Accord)\.h[>"]' src; then
+          if grep -RInE '#include[[:space:]]+[<"](Accord|Curier|Flow|Fresh|Link|Lingo|Passage|Phase|Pulse|Scout|Seal|Signal|Tempo|Trace|Vault|Worker)\.h[>"]' src; then
             echo "Knot must not depend on other ZekStack libraries"
             exit 1
           fi
