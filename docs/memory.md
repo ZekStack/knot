@@ -1,40 +1,69 @@
 # Memory
 
-Knot v0.1 keeps the public API bounded.
+Knot v0.2.0 routes Knot-owned dynamic allocations and synchronization storage through Strata v0.1.3 while preserving the bounded public API and existing password-hash format.
 
-## Public buffers
+## Default policy
 
 ```cpp
-KNOT_MAX_SALT_LENGTH
-KNOT_MAX_HASH_LENGTH
+KnotConfig config;
+config.memory.allocation = Strata::Placement::Default;
+config.memory.taskStack = Strata::Placement::Internal;
 ```
 
-Use these constants when allocating caller-owned output buffers.
+`memory.allocation` controls movable Knot-owned heap storage. `memory.taskStack` is part of the shared ZekStack memory-policy contract but is currently unused because Knot creates no FreeRTOS task.
 
-## Result buffers
+Knot deliberately keeps `Default` as its allocation default. The Strata migration does not turn Knot into a PSRAM-first library.
 
-`KnotSaltResult` and `KnotHashResult` contain fixed-size `value` arrays. They do not expose heap-owned strings.
+## Ownership and placement
 
-## Internal buffers
+| Resource | Placement / owner |
+| --- | --- |
+| `KnotImpl` control state | Internal Strata allocation |
+| recursive mutex control block | Internal through `Strata::FreeRTOS::RecursiveMutex` |
+| `KnotCompareOperationImpl` | `memory.allocation` |
+| Knot-owned HMAC wrapper context | operation `memory.allocation` |
+| mbedTLS internal allocations | mbedTLS-owned, outside Knot's ownership boundary |
+| synchronous salt/derived-key temporaries | caller task stack |
+| parser/encoding scratch buffers | caller task stack |
+| `KnotSaltResult` / `KnotHashResult` values | inline fixed arrays |
+| caller-provided output buffers | caller-owned |
 
-Synchronous hashing uses stack buffers for the raw salt and derived key. Sensitive derived-key buffers are wiped before returning.
+## Cooperative compare storage
 
-`KnotCompareOperation` owns fixed-size password, salt, expected-hash, `U`, accumulated `T`, and derived-key-block buffers, plus a small backend HMAC context. Its implementation is allocated when the operation object is constructed. Sensitive operation state is securely wiped on completion, failure, cancellation, reuse, and destruction.
+A default-constructed `KnotCompareOperation` performs no heap allocation. Its private state is allocated lazily by `beginCompare()` using the current Knot instance's `memory.allocation` policy.
+
+An inactive operation can be reused with another Knot instance. If the requested placement changes, Knot allocates replacement storage first, then securely clears and releases the old operation state. Allocation failure therefore leaves the previous inactive storage intact until a replacement exists.
+
+`Strata::Placement::RequireExternal` is strict. If external memory is unavailable, Knot initialization fails with `KnotCode::AllocationFailed` instead of silently falling back.
+
+## Sensitive data
+
+Strata owns storage placement and lifetime mechanics. Knot remains responsible for secret handling.
+
+Before Knot releases or re-homes owned cooperative-operation storage it clears:
+
+- the copied password;
+- salt and expected hash;
+- PBKDF2 `U` and accumulated values;
+- the derived-key block;
+- the HMAC wrapper context.
+
+Synchronous hashing continues to wipe raw salt and derived-key stack buffers before returning.
 
 ## Tasks
 
-Knot does not create a FreeRTOS task. `hash()` and `compare()` are synchronous convenience methods. Use `beginCompare()` and bounded `step()` calls when comparison must cooperate with request handling, Worker, or another scheduler.
+Knot does not create a FreeRTOS task. `hash()` and `compare()` remain synchronous convenience methods. Use `beginCompare()` and bounded `step()` calls when comparison must cooperate with request handling, Worker, or another scheduler.
 
-`beginCompare()` takes Knot's internal mutex only while validating inputs and copying the required configuration and hash state. The operation does not retain the mutex while it is between steps, sleeping, or executing PBKDF2 iterations.
+The operation does not retain Knot's mutex while it is between steps or executing PBKDF2 iterations. An already-started compare operation owns its state and can finish after Knot is deinitialized.
 
-Initialize and deinitialize Knot during application lifecycle setup/teardown. An already-started compare operation owns its state and can finish after Knot is deinitialized, but no new operation can begin until Knot is initialized again.
+## Diagnostics
 
-When `useMutex` is enabled, public methods that read Knot state take the internal FreeRTOS recursive mutex. The mutex blocks until it is available on ESP32. A single `KnotCompareOperation` must still be owned by one task at a time; do not call `step()` and `cancel()` concurrently.
+`Knot::getDiagnostics()` reports the requested general allocation policy plus the observed regions for the internal implementation and mutex control storage.
 
-## PSRAM
+`KnotCompareOperation::getDiagnostics()` reports whether storage exists, whether the operation is active, the requested placement, and observed regions for the operation and HMAC wrapper.
 
-Knot does not use PSRAM in v0.1 because the core operation uses small fixed buffers.
+Requested `Strata::Placement` and observed `Strata::Region` are intentionally kept separate.
 
 ## Benchmarking
 
-Use `examples/Benchmark` to measure hash time, compare time, and free heap before choosing a production cost. Use `examples/CooperativeCompare` to start tuning an iteration budget, then measure each `step()` on the target and aim for the application's responsiveness window, typically about 5-20 ms. Bulk provisioning may also need salt generation timing because each generated salt uses the crypto backend's random source.
+Use `examples/Benchmark` to measure hash time, compare time, and free heap before choosing a production cost. Use `examples/CooperativeCompare` to tune an iteration budget and aim for the application's responsiveness window, typically about 5-20 ms per `step()`.

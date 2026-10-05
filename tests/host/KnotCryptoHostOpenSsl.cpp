@@ -5,7 +5,6 @@
 #include <openssl/rand.h>
 
 #include <cstring>
-#include <new>
 
 namespace zek::knot::internal {
 
@@ -56,15 +55,16 @@ KnotResult pbkdf2Sha256(
 KnotResult hmacSha256Create(
     HmacSha256Context *&context,
     const uint8_t *key,
-    size_t keySize
+    size_t keySize,
+    Strata::Placement placement
 ) {
 	if (context != nullptr || key == nullptr || keySize > KNOT_MAX_PASSWORD_LENGTH) {
 		return KnotResult::failure(KnotCode::InvalidArgument, "invalid hmac input");
 	}
 
-	HmacSha256Context *created = new (std::nothrow) HmacSha256Context();
+	HmacSha256Context *created = Strata::create<HmacSha256Context>(placement);
 	if (created == nullptr) {
-		return KnotResult::failure(KnotCode::InternalError, "hmac allocation failed");
+		return KnotResult::failure(KnotCode::AllocationFailed, "hmac allocation failed");
 	}
 	if (keySize != 0) {
 		std::memcpy(created->key, key, keySize);
@@ -107,7 +107,7 @@ void hmacSha256Destroy(HmacSha256Context *&context) {
 		return;
 	}
 	secureZero(context, sizeof(*context));
-	delete context;
+	Strata::destroy(context);
 	context = nullptr;
 }
 

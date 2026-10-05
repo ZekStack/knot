@@ -6,7 +6,6 @@
 #include <mbedtls/pkcs5.h>
 
 #include <cstring>
-#include <new>
 
 namespace zek::knot::internal {
 
@@ -82,15 +81,16 @@ KnotResult pbkdf2Sha256(
 KnotResult hmacSha256Create(
     HmacSha256Context *&context,
     const uint8_t *key,
-    size_t keySize
+    size_t keySize,
+    Strata::Placement placement
 ) {
 	if (context != nullptr || key == nullptr) {
 		return KnotResult::failure(KnotCode::InvalidArgument, "invalid hmac input");
 	}
 
-	HmacSha256Context *created = new (std::nothrow) HmacSha256Context();
+	HmacSha256Context *created = Strata::create<HmacSha256Context>(placement);
 	if (created == nullptr) {
-		return KnotResult::failure(KnotCode::InternalError, "hmac allocation failed");
+		return KnotResult::failure(KnotCode::AllocationFailed, "hmac allocation failed");
 	}
 	mbedtls_md_init(&created->context);
 
@@ -102,7 +102,7 @@ KnotResult hmacSha256Create(
 	if (rc != 0) {
 		mbedtls_md_free(&created->context);
 		secureZero(created, sizeof(*created));
-		delete created;
+		Strata::destroy(created);
 		return KnotResult::failure(KnotCode::CryptoError, "hmac initialization failed");
 	}
 
@@ -149,7 +149,7 @@ void hmacSha256Destroy(HmacSha256Context *&context) {
 	mbedtls_md_free(&context->context);
 	context->initialized = false;
 	secureZero(context, sizeof(*context));
-	delete context;
+	Strata::destroy(context);
 	context = nullptr;
 }
 

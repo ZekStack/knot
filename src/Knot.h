@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Arduino.h>
+#include <Strata.h>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 
 #define KNOT_DEFAULT_COST 14
 #define KNOT_MIN_COST 4
@@ -30,6 +30,7 @@ enum class KnotCode : uint8_t {
 	PasswordTooLong,
 	EntropyFailed,
 	HashFailed,
+	AllocationFailed,
 	BufferTooSmall,
 	UnsupportedVersion,
 	UnsupportedAlgorithm,
@@ -67,6 +68,10 @@ struct KnotConfig {
 	size_t maxPasswordLength = KNOT_MAX_PASSWORD_LENGTH;
 	bool useMutex = true;
 	bool useConstantTimeCompare = true;
+	Strata::MemoryPolicy memory{
+	    .allocation = Strata::Placement::Default,
+	    .taskStack = Strata::Placement::Internal,
+	};
 };
 
 struct KnotSaltResult : KnotResult {
@@ -118,6 +123,22 @@ struct KnotStepResult : KnotResult {
 	}
 };
 
+struct KnotDiagnostics {
+	bool initialized = false;
+	bool mutexEnabled = false;
+	Strata::Placement allocationPlacement = Strata::Placement::Default;
+	Strata::Region implementationRegion = Strata::Region::Unknown;
+	Strata::Region mutexControlRegion = Strata::Region::Unknown;
+};
+
+struct KnotCompareOperationDiagnostics {
+	bool storageAllocated = false;
+	bool active = false;
+	Strata::Placement requestedPlacement = Strata::Placement::Default;
+	Strata::Region operationRegion = Strata::Region::Unknown;
+	Strata::Region hmacContextRegion = Strata::Region::Unknown;
+};
+
 class KnotCompareOperation {
   public:
 	KnotCompareOperation();
@@ -131,10 +152,11 @@ class KnotCompareOperation {
 	KnotStepResult step(uint32_t iterationBudget);
 	KnotResult cancel();
 	bool active() const;
+	KnotCompareOperationDiagnostics getDiagnostics() const;
 
   private:
 	friend class Knot;
-	std::unique_ptr<KnotCompareOperationImpl> _impl;
+	Strata::UniquePtr<KnotCompareOperationImpl> _impl;
 };
 
 class Knot {
@@ -208,11 +230,13 @@ class Knot {
 	bool needsRehash(const char *encodedHash) const;
 	bool needsRehash(const char *encodedHash, uint8_t targetCost) const;
 
+	KnotDiagnostics getDiagnostics() const;
+
 	const char *codeToString(KnotCode code) const;
 	const char *cryptoBackendName() const;
 
   private:
-	std::unique_ptr<KnotImpl> _impl;
+	Strata::UniquePtr<KnotImpl> _impl;
 };
 
 } // namespace zek::knot
@@ -221,8 +245,10 @@ class Knot {
 using Knot = zek::knot::Knot;
 using KnotCode = zek::knot::KnotCode;
 using KnotCompareOperation = zek::knot::KnotCompareOperation;
+using KnotCompareOperationDiagnostics = zek::knot::KnotCompareOperationDiagnostics;
 using KnotCompareResult = zek::knot::KnotCompareResult;
 using KnotConfig = zek::knot::KnotConfig;
+using KnotDiagnostics = zek::knot::KnotDiagnostics;
 using KnotHashResult = zek::knot::KnotHashResult;
 using KnotInfoResult = zek::knot::KnotInfoResult;
 using KnotResult = zek::knot::KnotResult;
