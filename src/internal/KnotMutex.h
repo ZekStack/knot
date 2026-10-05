@@ -1,53 +1,10 @@
 #pragma once
 
-#if defined(ESP32)
-#include <freertos/FreeRTOS.h>
-#include <freertos/semphr.h>
-#endif
+#include <strata/freertos/Mutex.h>
 
 namespace zek::knot {
 
-class KnotMutex {
-  public:
-	KnotMutex() {
-#if defined(ESP32)
-		_handle = xSemaphoreCreateRecursiveMutex();
-#endif
-	}
-
-	~KnotMutex() {
-#if defined(ESP32)
-		if (_handle != nullptr) {
-			vSemaphoreDelete(_handle);
-			_handle = nullptr;
-		}
-#endif
-	}
-
-	KnotMutex(const KnotMutex &) = delete;
-	KnotMutex &operator=(const KnotMutex &) = delete;
-
-	bool lock() {
-#if defined(ESP32)
-		return _handle != nullptr && xSemaphoreTakeRecursive(_handle, portMAX_DELAY) == pdTRUE;
-#else
-		return true;
-#endif
-	}
-
-	void unlock() {
-#if defined(ESP32)
-		if (_handle != nullptr) {
-			xSemaphoreGiveRecursive(_handle);
-		}
-#endif
-	}
-
-  private:
-#if defined(ESP32)
-	SemaphoreHandle_t _handle = nullptr;
-#endif
-};
+using KnotMutex = Strata::FreeRTOS::RecursiveMutex;
 
 class KnotLock {
   public:
