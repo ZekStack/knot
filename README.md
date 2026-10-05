@@ -14,6 +14,7 @@ Knot helps Arduino ESP32 projects create and verify self-contained password hash
 * **Self-contained hashes** - the encoded hash stores the algorithm marker, version, cost, salt, and derived key.
 * **Cooperative verification** - split PBKDF2 comparison into bounded steps for FreeRTOS and Worker integration.
 * **ESP32-friendly** - fixed public buffers, no exceptions, result-based errors, and optional mutex protection.
+* **Shared memory policy** - Strata v0.1.3 owns Knot's dynamic storage and FreeRTOS mutex control block.
 * **Familiar API shape** - `genSalt()`, `hash()`, `compare()`, and `getRounds()` helpers without bcrypt compatibility claims.
 * **Clear compatibility** - Knot hashes are not bcrypt hashes and never use bcrypt `$2a$`, `$2b$`, or `$2y$` prefixes.
 
@@ -36,15 +37,18 @@ build_unflags =
   -std=gnu++11
 ```
 
+Knot's `library.json` pins Strata v0.1.3, so PlatformIO resolves it transitively.
+
 ### Arduino IDE
 
-Knot is not published to Arduino Library Manager yet.
-
-Install it by downloading the repository ZIP or cloning it into your Arduino libraries folder.
+Knot and Strata are not published to Arduino Library Manager yet. Install both repositories into your Arduino libraries folder.
 
 ```txt
+Arduino/libraries/Strata
 Arduino/libraries/Knot
 ```
+
+Use Strata v0.1.3 or a compatible later release.
 
 ## Quick start
 
@@ -129,6 +133,7 @@ Benchmark `iterationBudget` on the target and aim for the application's responsi
 | `Configuration` | Configure password length and cost limits. |
 | `ClassUsage` | Use Knot from an application class. |
 | `Benchmark` | Print target, cost, iterations, timing, and heap measurements. |
+| `MemoryPolicy` | Configure Strata placement and inspect memory diagnostics. |
 
 Start with:
 
@@ -147,7 +152,8 @@ Detailed documentation is available in the `docs/` folder.
 | [`docs/api.md`](docs/api.md) | Public classes, methods, and result types. |
 | [`docs/examples.md`](docs/examples.md) | Explanation of all included examples. |
 | [`docs/security.md`](docs/security.md) | Password hashing and storage notes. |
-| [`docs/memory.md`](docs/memory.md) | Buffers, mutexes, and synchronous behavior. |
+| [`docs/memory.md`](docs/memory.md) | Strata ownership, placement, sensitive state, and diagnostics. |
+| [`docs/migration-0.2.0.md`](docs/migration-0.2.0.md) | Migration from Knot v0.1.x to v0.2.0. |
 | [`docs/troubleshooting.md`](docs/troubleshooting.md) | Common issues and fixes. |
 | [`docs/bcrypt-positioning.md`](docs/bcrypt-positioning.md) | Bcrypt-like format and compatibility limits. |
 
@@ -175,10 +181,11 @@ For the full API, see [`docs/api.md`](docs/api.md).
 | Platform | `espressif32` |
 | Language | C++20 |
 | Filesystem | none |
-| PSRAM | not used in v0.1 |
-| Dependencies | mbedTLS from ESP32 platform |
+| Memory layer | Strata `v0.1.3` |
+| External memory | Optional through Strata placement policy |
+| Dependencies | Strata `v0.1.3` + mbedTLS from ESP32 platform |
 | Exceptions | Not used |
-| Status | Early-stage `0.1.0` |
+| Status | `v0.2.0` API |
 
 ## Configuration
 
@@ -188,6 +195,7 @@ config.defaultCost = 14;
 config.minCost = 4;
 config.maxCost = 16;
 config.maxPasswordLength = 72;
+config.memory.allocation = Strata::Placement::Default;
 
 KnotResult result = knot.init(config);
 ```
@@ -195,6 +203,14 @@ KnotResult result = knot.init(config);
 For all options, see [`docs/configuration.md`](docs/configuration.md).
 
 Existing `$knot$v1$c10$...` hashes remain verifiable after the default cost change. They are treated as rehash candidates when checked against the new default cost 14.
+
+## Memory policy
+
+Knot v0.2.0 uses the ZekStack-standard `Strata::MemoryPolicy`. The default `memory.allocation = Strata::Placement::Default` preserves Knot's previous behavior; Knot does not become PSRAM-first simply because it uses Strata.
+
+Cooperative compare state is allocated lazily by `beginCompare()` and follows `memory.allocation`. The small Knot control object and recursive-mutex control block remain internal. Knot creates no task, so `memory.taskStack` is currently unused.
+
+Use `Knot::getDiagnostics()` and `KnotCompareOperation::getDiagnostics()` to inspect requested placement separately from observed memory regions.
 
 ## Error handling
 
