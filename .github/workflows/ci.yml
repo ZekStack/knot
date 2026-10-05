@@ -15,6 +15,7 @@ env:
   PIOARDUINO_PLATFORM_URL: https://github.com/pioarduino/platform-espressif32/releases/download/55.03.39/platform-espressif32.zip
   PIOARDUINO_PLATFORM_VERSION: 55.03.39
   PIOARDUINO_VERSION: 6.1.19
+  STRATA_VERSION: v0.1.3
 
 jobs:
   source-audit:
@@ -25,6 +26,7 @@ jobs:
 
       - name: Audit production sources
         run: |
+          set -e
           if grep -RInE '(^|[^[:alnum:]_])throw([^[:alnum:]_]|$)|std::abort[[:space:]]*\(' src; then
             echo "Embedded safety audit failed"
             exit 1
@@ -37,6 +39,7 @@ jobs:
             echo "Knot must not depend on other ZekStack libraries"
             exit 1
           fi
+          python3 scripts/check_strata_contract.py
 
   host-internal-tests:
     runs-on: ubuntu-latest
@@ -45,35 +48,47 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Fetch Strata
+        run: |
+          rm -rf /tmp/knot-strata
+          git clone --depth 1 --branch "${STRATA_VERSION}" \
+            https://github.com/ZekStack/strata.git \
+            /tmp/knot-strata
+
       - name: Build and run host internal tests
         run: |
-          g++ -std=c++20 -Wall -Wextra -pedantic \
+          set -e
+          COMMON_SOURCES="src/Knot.cpp src/KnotCompareOperation.cpp src/internal/KnotBase64Url.cpp src/internal/KnotCrypto.cpp src/internal/KnotFormat.cpp tests/host/KnotCryptoHostOpenSsl.cpp /tmp/knot-strata/src/strata/Allocation.cpp /tmp/knot-strata/src/strata/internal/PlatformGeneric.cpp"
+
+          g++ -std=c++20 -Wall -Wextra -pedantic -pthread \
             -Itests/host/stubs \
             -Isrc \
-            src/Knot.cpp \
-            src/KnotCompareOperation.cpp \
-            src/internal/KnotBase64Url.cpp \
-            src/internal/KnotCrypto.cpp \
-            src/internal/KnotFormat.cpp \
-            tests/host/KnotCryptoHostOpenSsl.cpp \
+            -I/tmp/knot-strata/src \
+            $COMMON_SOURCES \
             tests/host/test_knot_internals.cpp \
             -lcrypto \
             -o /tmp/knot-host-tests
           /tmp/knot-host-tests
 
-          g++ -std=c++20 -Wall -Wextra -pedantic \
+          g++ -std=c++20 -Wall -Wextra -pedantic -pthread \
             -Itests/host/stubs \
             -Isrc \
-            src/Knot.cpp \
-            src/KnotCompareOperation.cpp \
-            src/internal/KnotBase64Url.cpp \
-            src/internal/KnotCrypto.cpp \
-            src/internal/KnotFormat.cpp \
-            tests/host/KnotCryptoHostOpenSsl.cpp \
+            -I/tmp/knot-strata/src \
+            $COMMON_SOURCES \
             tests/host/test_knot_cooperative.cpp \
             -lcrypto \
             -o /tmp/knot-cooperative-tests
           /tmp/knot-cooperative-tests
+
+          g++ -std=c++20 -Wall -Wextra -pedantic -pthread \
+            -Itests/host/stubs \
+            -Isrc \
+            -I/tmp/knot-strata/src \
+            $COMMON_SOURCES \
+            tests/host/test_knot_memory.cpp \
+            -lcrypto \
+            -o /tmp/knot-memory-tests
+          /tmp/knot-memory-tests
 
   host-sanitizer-tests:
     runs-on: ubuntu-latest
@@ -82,37 +97,50 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Fetch Strata
+        run: |
+          rm -rf /tmp/knot-strata
+          git clone --depth 1 --branch "${STRATA_VERSION}" \
+            https://github.com/ZekStack/strata.git \
+            /tmp/knot-strata
+
       - name: Build and run host sanitizer tests
         run: |
-          g++ -std=c++20 -Wall -Wextra -pedantic \
+          set -e
+          COMMON_SOURCES="src/Knot.cpp src/KnotCompareOperation.cpp src/internal/KnotBase64Url.cpp src/internal/KnotCrypto.cpp src/internal/KnotFormat.cpp tests/host/KnotCryptoHostOpenSsl.cpp /tmp/knot-strata/src/strata/Allocation.cpp /tmp/knot-strata/src/strata/internal/PlatformGeneric.cpp"
+
+          g++ -std=c++20 -Wall -Wextra -pedantic -pthread \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
             -Itests/host/stubs \
             -Isrc \
-            src/Knot.cpp \
-            src/KnotCompareOperation.cpp \
-            src/internal/KnotBase64Url.cpp \
-            src/internal/KnotCrypto.cpp \
-            src/internal/KnotFormat.cpp \
-            tests/host/KnotCryptoHostOpenSsl.cpp \
+            -I/tmp/knot-strata/src \
+            $COMMON_SOURCES \
             tests/host/test_knot_internals.cpp \
             -lcrypto \
             -o /tmp/knot-host-sanitizer-tests
           ASAN_OPTIONS=detect_leaks=0 /tmp/knot-host-sanitizer-tests
 
-          g++ -std=c++20 -Wall -Wextra -pedantic \
+          g++ -std=c++20 -Wall -Wextra -pedantic -pthread \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
             -Itests/host/stubs \
             -Isrc \
-            src/Knot.cpp \
-            src/KnotCompareOperation.cpp \
-            src/internal/KnotBase64Url.cpp \
-            src/internal/KnotCrypto.cpp \
-            src/internal/KnotFormat.cpp \
-            tests/host/KnotCryptoHostOpenSsl.cpp \
+            -I/tmp/knot-strata/src \
+            $COMMON_SOURCES \
             tests/host/test_knot_cooperative.cpp \
             -lcrypto \
             -o /tmp/knot-cooperative-sanitizer-tests
           ASAN_OPTIONS=detect_leaks=0 /tmp/knot-cooperative-sanitizer-tests
+
+          g++ -std=c++20 -Wall -Wextra -pedantic -pthread \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Itests/host/stubs \
+            -Isrc \
+            -I/tmp/knot-strata/src \
+            $COMMON_SOURCES \
+            tests/host/test_knot_memory.cpp \
+            -lcrypto \
+            -o /tmp/knot-memory-sanitizer-tests
+          ASAN_OPTIONS=detect_leaks=0 /tmp/knot-memory-sanitizer-tests
 
   build-examples:
     runs-on: ubuntu-latest
@@ -156,6 +184,7 @@ jobs:
                 --board ${{ matrix.board }} \
                 --lib="." \
                 --project-option "platform=${PIOARDUINO_PLATFORM_URL}" \
+                --project-option "lib_deps=https://github.com/ZekStack/strata.git#${STRATA_VERSION}" \
                 --project-option "build_unflags=-std=gnu++11" \
                 --project-option "build_flags=-std=gnu++20"
             fi
@@ -200,12 +229,16 @@ jobs:
           arduino-cli core update-index
           arduino-cli core install "esp32:esp32@${ESP32_CORE_VERSION}"
 
-      - name: Add local library to sketchbook
+      - name: Add local libraries to sketchbook
         run: |
           set -e
           SKETCHBOOK_DIR="${HOME}/Arduino"
           mkdir -p "$SKETCHBOOK_DIR/libraries/Knot"
           rsync -a --delete --exclude ".git" ./ "$SKETCHBOOK_DIR/libraries/Knot/"
+          rm -rf "$SKETCHBOOK_DIR/libraries/Strata"
+          git clone --depth 1 --branch "${STRATA_VERSION}" \
+            https://github.com/ZekStack/strata.git \
+            "$SKETCHBOOK_DIR/libraries/Strata"
 
       - name: Build examples (${{ matrix.board.name }})
         env:
