@@ -49,6 +49,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -58,10 +60,681 @@ jobs:
       - name: Install clang-format
         run: python -m pip install "clang-format==19.1.7"
 
-      - name: Check C++ formatting
+      - name: Check changed C++ formatting
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
         run: |
-          find src tests examples -type f \( -name '*.h' -o -name '*.hpp' -o -name '*.cpp' -o -name '*.ino' \) -print0 \
-            | xargs -0 clang-format --dry-run --Werror
+          set -euo pipefail
+
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" || -z "${BASE_SHA}" || "${BASE_SHA}" == "0000000000000000000000000000000000000000" ]]; then
+            mapfile -t files < <(
+              git ls-files 'src/**' 'tests/**' 'examples/**' \
+                | grep -E '\.(h|hpp|cpp|ino)
+  metadata:
+    runs-on: [self-hosted, zekstack-ci]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate package and tag versions
+        shell: bash
+        run: |
+          set -e
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            python3 scripts/check_version.py --tag "${GITHUB_REF_NAME}"
+          else
+            python3 scripts/check_version.py
+          fi
+
+      - name: Test release changelog generation
+        run: python3 tests/test_release_changelog.py
+
+  source-audit:
+    runs-on: [self-hosted, zekstack-ci]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Audit production sources
+        run: |
+          set -e
+          if grep -RInE '(^|[^[:alnum:]_])throw([^[:alnum:]_]|$)|std::abort[[:space:]]*\(' src; then
+            echo "Embedded safety audit failed"
+            exit 1
+          fi
+          if grep -RIn 'mbedtls/' src | grep -v 'src/internal/KnotCryptoMbedTls.cpp'; then
+            echo "mbedTLS must stay behind the KnotCrypto backend boundary"
+            exit 1
+          fi
+          if grep -RInE '#include[[:space:]]+[<"](Accord|Curier|Flow|Fresh|Link|Lingo|Passage|Phase|Pulse|Scout|Seal|Signal|Tempo|Trace|Vault|Worker)\.h[>"]' src; then
+            echo "Knot must not depend on other ZekStack libraries"
+            exit 1
+          fi
+          python3 scripts/check_strata_contract.py
+
+  arduino-lint:
+    runs-on: [self-hosted, zekstack-ci]
+    needs: [metadata, source-audit]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Arduino Lint
+        uses: arduino/arduino-lint-action@v1
+        with:
+          library-manager: false
+          project-type: library
+
+  host-internal-tests:
+    runs-on: [self-hosted, zekstack-ci]
+    needs: [metadata, source-audit, formatting]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch Strata
+        run: |
+          set -e
+          STRATA_DIR="${RUNNER_TEMP}/knot-strata"
+          rm -rf "${STRATA_DIR}"
+          git clone --depth 1 --branch "${STRATA_VERSION}" \
+            https://github.com/ZekStack/strata.git \
+            "${STRATA_DIR}"
+
+      - name: Build and run host internal tests
+        run: |
+          set -e
+          STRATA_DIR="${RUNNER_TEMP}/knot-strata"
+          COMMON_SOURCES="src/Knot.cpp src/KnotCompareOperation.cpp src/internal/KnotBase64Url.cpp src/internal/KnotCrypto.cpp src/internal/KnotFormat.cpp tests/host/KnotCryptoHostOpenSsl.cpp ${STRATA_DIR}/src/strata/Allocation.cpp ${STRATA_DIR}/src/strata/Diagnostics.cpp ${STRATA_DIR}/src/strata/internal/PlatformGeneric.cpp"
+
+          g++ -std=c++20 -Wall -Wextra -pedantic -pthread \
+            -Itests/host/stubs \
+            -Isrc \
+            -I"${STRATA_DIR}/src" \
+            $COMMON_SOURCES \
+            tests/host/test_knot_internals.cpp \
+            -lcrypto \
+            -o "${RUNNER_TEMP}/knot-host-tests"
+          "${RUNNER_TEMP}/knot-host-tests"
+
+          g++ -std=c++20 -Wall -Wextra -pedantic -pthread \
+            -Itests/host/stubs \
+            -Isrc \
+            -I"${STRATA_DIR}/src" \
+            $COMMON_SOURCES \
+            tests/host/test_knot_cooperative.cpp \
+            -lcrypto \
+            -o "${RUNNER_TEMP}/knot-cooperative-tests"
+          "${RUNNER_TEMP}/knot-cooperative-tests"
+
+          g++ -std=c++20 -Wall -Wextra -pedantic -pthread \
+            -Itests/host/stubs \
+            -Isrc \
+            -I"${STRATA_DIR}/src" \
+            $COMMON_SOURCES \
+            tests/host/test_knot_memory.cpp \
+            -lcrypto \
+            -o "${RUNNER_TEMP}/knot-memory-tests"
+          "${RUNNER_TEMP}/knot-memory-tests"
+
+  host-sanitizer-tests:
+    runs-on: [self-hosted, zekstack-ci]
+    needs: [metadata, source-audit, formatting]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch Strata
+        run: |
+          set -e
+          STRATA_DIR="${RUNNER_TEMP}/knot-strata"
+          rm -rf "${STRATA_DIR}"
+          git clone --depth 1 --branch "${STRATA_VERSION}" \
+            https://github.com/ZekStack/strata.git \
+            "${STRATA_DIR}"
+
+      - name: Build and run host sanitizer tests
+        run: |
+          set -e
+          STRATA_DIR="${RUNNER_TEMP}/knot-strata"
+          COMMON_SOURCES="src/Knot.cpp src/KnotCompareOperation.cpp src/internal/KnotBase64Url.cpp src/internal/KnotCrypto.cpp src/internal/KnotFormat.cpp tests/host/KnotCryptoHostOpenSsl.cpp ${STRATA_DIR}/src/strata/Allocation.cpp ${STRATA_DIR}/src/strata/Diagnostics.cpp ${STRATA_DIR}/src/strata/internal/PlatformGeneric.cpp"
+
+          g++ -std=c++20 -Wall -Wextra -pedantic -pthread \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Itests/host/stubs \
+            -Isrc \
+            -I"${STRATA_DIR}/src" \
+            $COMMON_SOURCES \
+            tests/host/test_knot_internals.cpp \
+            -lcrypto \
+            -o "${RUNNER_TEMP}/knot-host-sanitizer-tests"
+          ASAN_OPTIONS=detect_leaks=0 "${RUNNER_TEMP}/knot-host-sanitizer-tests"
+
+          g++ -std=c++20 -Wall -Wextra -pedantic -pthread \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Itests/host/stubs \
+            -Isrc \
+            -I"${STRATA_DIR}/src" \
+            $COMMON_SOURCES \
+            tests/host/test_knot_cooperative.cpp \
+            -lcrypto \
+            -o "${RUNNER_TEMP}/knot-cooperative-sanitizer-tests"
+          ASAN_OPTIONS=detect_leaks=0 "${RUNNER_TEMP}/knot-cooperative-sanitizer-tests"
+
+          g++ -std=c++20 -Wall -Wextra -pedantic -pthread \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Itests/host/stubs \
+            -Isrc \
+            -I"${STRATA_DIR}/src" \
+            $COMMON_SOURCES \
+            tests/host/test_knot_memory.cpp \
+            -lcrypto \
+            -o "${RUNNER_TEMP}/knot-memory-sanitizer-tests"
+          ASAN_OPTIONS=detect_leaks=0 "${RUNNER_TEMP}/knot-memory-sanitizer-tests"
+
+  build-examples:
+    runs-on: [self-hosted, zekstack-ci]
+    needs: [metadata, source-audit, host-internal-tests, host-sanitizer-tests]
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        board: [esp32dev, esp32-s3-devkitc-1, esp32-c3-devkitm-1, esp32-p4-evboard]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Configure writable PIOArduino directories
+        run: |
+          echo "PLATFORMIO_CORE_DIR=${RUNNER_TEMP}/knot-platformio" >> "${GITHUB_ENV}"
+          echo "PIP_CACHE_DIR=${RUNNER_TEMP}/knot-pip-cache" >> "${GITHUB_ENV}"
+
+      - name: Cache PIOArduino
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/knot-platformio
+            ${{ runner.temp }}/knot-pip-cache
+          key: ${{ runner.os }}-knot-pioarduino-${{ env.PIOARDUINO_VERSION }}-${{ env.PIOARDUINO_PLATFORM_VERSION }}-${{ hashFiles('**/library.json') }}
+          restore-keys: |
+            ${{ runner.os }}-knot-pioarduino-${{ env.PIOARDUINO_VERSION }}-${{ env.PIOARDUINO_PLATFORM_VERSION }}-
+
+      - name: Install PIOArduino Core
+        run: python -m pip install --upgrade "pioarduino==${PIOARDUINO_VERSION}"
+
+      - name: Install PIOArduino ESP32 Platform
+        run: pio pkg install -g -p "${PIOARDUINO_PLATFORM_URL}"
+
+      - name: Build library examples
+        run: |
+          set -e
+          for d in examples/*; do
+            if [ -d "$d" ]; then
+              echo "Building $d on ${{ matrix.board }}"
+              pio ci "$d" \
+                --board ${{ matrix.board }} \
+                --lib="." \
+                --project-option "platform=${PIOARDUINO_PLATFORM_URL}" \
+                --project-option "lib_deps=https://github.com/ZekStack/strata.git#${STRATA_VERSION}" \
+                --project-option "build_unflags=-std=gnu++11" \
+                --project-option "build_flags=-std=gnu++20"
+            fi
+          done
+
+  arduino-cli:
+    runs-on: [self-hosted, zekstack-ci]
+    needs: [metadata, source-audit, host-internal-tests, host-sanitizer-tests]
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        board:
+          - fqbn: esp32:esp32:esp32
+            name: esp32dev
+          - fqbn: esp32:esp32:esp32s3
+            name: esp32-s3-devkitc-1
+          - fqbn: esp32:esp32:esp32c3
+            name: esp32-c3-devkitm-1
+          - fqbn: esp32:esp32:esp32p4
+            name: esp32-p4-evboard
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Arduino CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64|amd64)
+              archive="arduino-cli_${ARDUINO_CLI_VERSION}_Linux_64bit.tar.gz"
+              ;;
+            aarch64|arm64)
+              archive="arduino-cli_${ARDUINO_CLI_VERSION}_Linux_ARM64.tar.gz"
+              ;;
+            *)
+              echo "Unsupported runner architecture: $(uname -m)"
+              exit 1
+              ;;
+          esac
+
+          install_dir="${RUNNER_TEMP}/arduino-cli"
+          url="https://github.com/arduino/arduino-cli/releases/download/v${ARDUINO_CLI_VERSION}/${archive}"
+          mkdir -p "${install_dir}"
+
+          curl --fail --location \
+            --retry 5 \
+            --retry-all-errors \
+            --retry-delay 2 \
+            --connect-timeout 15 \
+            --max-time 180 \
+            "${url}" \
+            --output "${RUNNER_TEMP}/${archive}"
+
+          tar -xzf "${RUNNER_TEMP}/${archive}" -C "${install_dir}" arduino-cli
+          echo "${install_dir}" >> "${GITHUB_PATH}"
+          "${install_dir}/arduino-cli" version
+
+      - name: Configure writable Arduino directories
+        run: |
+          echo "ARDUINO_DIRECTORIES_DATA=${RUNNER_TEMP}/knot-arduino/data" >> "${GITHUB_ENV}"
+          echo "ARDUINO_DIRECTORIES_DOWNLOADS=${RUNNER_TEMP}/knot-arduino/downloads" >> "${GITHUB_ENV}"
+          echo "ARDUINO_DIRECTORIES_USER=${RUNNER_TEMP}/knot-arduino/user" >> "${GITHUB_ENV}"
+
+      - name: Install ESP32 core
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install "esp32:esp32@${ESP32_CORE_VERSION}"
+
+      - name: Add local libraries to sketchbook
+        run: |
+          set -e
+          SKETCHBOOK_DIR="${ARDUINO_DIRECTORIES_USER}"
+          mkdir -p "${SKETCHBOOK_DIR}/libraries/Knot"
+          rsync -a --delete --exclude ".git" ./ "${SKETCHBOOK_DIR}/libraries/Knot/"
+          rm -rf "${SKETCHBOOK_DIR}/libraries/Strata"
+          git clone --depth 1 --branch "${STRATA_VERSION}" \
+            https://github.com/ZekStack/strata.git \
+            "${SKETCHBOOK_DIR}/libraries/Strata"
+
+      - name: Build examples (${{ matrix.board.name }})
+        env:
+          FQBN: ${{ matrix.board.fqbn }}
+        run: |
+          set -e
+          for d in examples/*; do
+            if [ -d "$d" ]; then
+              echo "Compiling $d"
+              arduino-cli compile \
+                --fqbn "${FQBN}" \
+                --build-property "compiler.cpp.extra_flags=-std=gnu++20" \
+                "$d"
+            fi
+          done
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - whitespace
+      - formatting
+      - metadata
+      - source-audit
+      - arduino-lint
+      - host-internal-tests
+      - host-sanitizer-tests
+      - build-examples
+      - arduino-cli
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+ || true
+            )
+          else
+            mapfile -t files < <(
+              git diff --name-only --diff-filter=ACMR "${BASE_SHA}" "${HEAD_SHA}" -- src tests examples \
+                | grep -E '\.(h|hpp|cpp|ino)
+  metadata:
+    runs-on: [self-hosted, zekstack-ci]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate package and tag versions
+        shell: bash
+        run: |
+          set -e
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            python3 scripts/check_version.py --tag "${GITHUB_REF_NAME}"
+          else
+            python3 scripts/check_version.py
+          fi
+
+      - name: Test release changelog generation
+        run: python3 tests/test_release_changelog.py
+
+  source-audit:
+    runs-on: [self-hosted, zekstack-ci]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Audit production sources
+        run: |
+          set -e
+          if grep -RInE '(^|[^[:alnum:]_])throw([^[:alnum:]_]|$)|std::abort[[:space:]]*\(' src; then
+            echo "Embedded safety audit failed"
+            exit 1
+          fi
+          if grep -RIn 'mbedtls/' src | grep -v 'src/internal/KnotCryptoMbedTls.cpp'; then
+            echo "mbedTLS must stay behind the KnotCrypto backend boundary"
+            exit 1
+          fi
+          if grep -RInE '#include[[:space:]]+[<"](Accord|Curier|Flow|Fresh|Link|Lingo|Passage|Phase|Pulse|Scout|Seal|Signal|Tempo|Trace|Vault|Worker)\.h[>"]' src; then
+            echo "Knot must not depend on other ZekStack libraries"
+            exit 1
+          fi
+          python3 scripts/check_strata_contract.py
+
+  arduino-lint:
+    runs-on: [self-hosted, zekstack-ci]
+    needs: [metadata, source-audit]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Arduino Lint
+        uses: arduino/arduino-lint-action@v1
+        with:
+          library-manager: false
+          project-type: library
+
+  host-internal-tests:
+    runs-on: [self-hosted, zekstack-ci]
+    needs: [metadata, source-audit, formatting]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch Strata
+        run: |
+          set -e
+          STRATA_DIR="${RUNNER_TEMP}/knot-strata"
+          rm -rf "${STRATA_DIR}"
+          git clone --depth 1 --branch "${STRATA_VERSION}" \
+            https://github.com/ZekStack/strata.git \
+            "${STRATA_DIR}"
+
+      - name: Build and run host internal tests
+        run: |
+          set -e
+          STRATA_DIR="${RUNNER_TEMP}/knot-strata"
+          COMMON_SOURCES="src/Knot.cpp src/KnotCompareOperation.cpp src/internal/KnotBase64Url.cpp src/internal/KnotCrypto.cpp src/internal/KnotFormat.cpp tests/host/KnotCryptoHostOpenSsl.cpp ${STRATA_DIR}/src/strata/Allocation.cpp ${STRATA_DIR}/src/strata/Diagnostics.cpp ${STRATA_DIR}/src/strata/internal/PlatformGeneric.cpp"
+
+          g++ -std=c++20 -Wall -Wextra -pedantic -pthread \
+            -Itests/host/stubs \
+            -Isrc \
+            -I"${STRATA_DIR}/src" \
+            $COMMON_SOURCES \
+            tests/host/test_knot_internals.cpp \
+            -lcrypto \
+            -o "${RUNNER_TEMP}/knot-host-tests"
+          "${RUNNER_TEMP}/knot-host-tests"
+
+          g++ -std=c++20 -Wall -Wextra -pedantic -pthread \
+            -Itests/host/stubs \
+            -Isrc \
+            -I"${STRATA_DIR}/src" \
+            $COMMON_SOURCES \
+            tests/host/test_knot_cooperative.cpp \
+            -lcrypto \
+            -o "${RUNNER_TEMP}/knot-cooperative-tests"
+          "${RUNNER_TEMP}/knot-cooperative-tests"
+
+          g++ -std=c++20 -Wall -Wextra -pedantic -pthread \
+            -Itests/host/stubs \
+            -Isrc \
+            -I"${STRATA_DIR}/src" \
+            $COMMON_SOURCES \
+            tests/host/test_knot_memory.cpp \
+            -lcrypto \
+            -o "${RUNNER_TEMP}/knot-memory-tests"
+          "${RUNNER_TEMP}/knot-memory-tests"
+
+  host-sanitizer-tests:
+    runs-on: [self-hosted, zekstack-ci]
+    needs: [metadata, source-audit, formatting]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch Strata
+        run: |
+          set -e
+          STRATA_DIR="${RUNNER_TEMP}/knot-strata"
+          rm -rf "${STRATA_DIR}"
+          git clone --depth 1 --branch "${STRATA_VERSION}" \
+            https://github.com/ZekStack/strata.git \
+            "${STRATA_DIR}"
+
+      - name: Build and run host sanitizer tests
+        run: |
+          set -e
+          STRATA_DIR="${RUNNER_TEMP}/knot-strata"
+          COMMON_SOURCES="src/Knot.cpp src/KnotCompareOperation.cpp src/internal/KnotBase64Url.cpp src/internal/KnotCrypto.cpp src/internal/KnotFormat.cpp tests/host/KnotCryptoHostOpenSsl.cpp ${STRATA_DIR}/src/strata/Allocation.cpp ${STRATA_DIR}/src/strata/Diagnostics.cpp ${STRATA_DIR}/src/strata/internal/PlatformGeneric.cpp"
+
+          g++ -std=c++20 -Wall -Wextra -pedantic -pthread \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Itests/host/stubs \
+            -Isrc \
+            -I"${STRATA_DIR}/src" \
+            $COMMON_SOURCES \
+            tests/host/test_knot_internals.cpp \
+            -lcrypto \
+            -o "${RUNNER_TEMP}/knot-host-sanitizer-tests"
+          ASAN_OPTIONS=detect_leaks=0 "${RUNNER_TEMP}/knot-host-sanitizer-tests"
+
+          g++ -std=c++20 -Wall -Wextra -pedantic -pthread \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Itests/host/stubs \
+            -Isrc \
+            -I"${STRATA_DIR}/src" \
+            $COMMON_SOURCES \
+            tests/host/test_knot_cooperative.cpp \
+            -lcrypto \
+            -o "${RUNNER_TEMP}/knot-cooperative-sanitizer-tests"
+          ASAN_OPTIONS=detect_leaks=0 "${RUNNER_TEMP}/knot-cooperative-sanitizer-tests"
+
+          g++ -std=c++20 -Wall -Wextra -pedantic -pthread \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Itests/host/stubs \
+            -Isrc \
+            -I"${STRATA_DIR}/src" \
+            $COMMON_SOURCES \
+            tests/host/test_knot_memory.cpp \
+            -lcrypto \
+            -o "${RUNNER_TEMP}/knot-memory-sanitizer-tests"
+          ASAN_OPTIONS=detect_leaks=0 "${RUNNER_TEMP}/knot-memory-sanitizer-tests"
+
+  build-examples:
+    runs-on: [self-hosted, zekstack-ci]
+    needs: [metadata, source-audit, host-internal-tests, host-sanitizer-tests]
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        board: [esp32dev, esp32-s3-devkitc-1, esp32-c3-devkitm-1, esp32-p4-evboard]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Configure writable PIOArduino directories
+        run: |
+          echo "PLATFORMIO_CORE_DIR=${RUNNER_TEMP}/knot-platformio" >> "${GITHUB_ENV}"
+          echo "PIP_CACHE_DIR=${RUNNER_TEMP}/knot-pip-cache" >> "${GITHUB_ENV}"
+
+      - name: Cache PIOArduino
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/knot-platformio
+            ${{ runner.temp }}/knot-pip-cache
+          key: ${{ runner.os }}-knot-pioarduino-${{ env.PIOARDUINO_VERSION }}-${{ env.PIOARDUINO_PLATFORM_VERSION }}-${{ hashFiles('**/library.json') }}
+          restore-keys: |
+            ${{ runner.os }}-knot-pioarduino-${{ env.PIOARDUINO_VERSION }}-${{ env.PIOARDUINO_PLATFORM_VERSION }}-
+
+      - name: Install PIOArduino Core
+        run: python -m pip install --upgrade "pioarduino==${PIOARDUINO_VERSION}"
+
+      - name: Install PIOArduino ESP32 Platform
+        run: pio pkg install -g -p "${PIOARDUINO_PLATFORM_URL}"
+
+      - name: Build library examples
+        run: |
+          set -e
+          for d in examples/*; do
+            if [ -d "$d" ]; then
+              echo "Building $d on ${{ matrix.board }}"
+              pio ci "$d" \
+                --board ${{ matrix.board }} \
+                --lib="." \
+                --project-option "platform=${PIOARDUINO_PLATFORM_URL}" \
+                --project-option "lib_deps=https://github.com/ZekStack/strata.git#${STRATA_VERSION}" \
+                --project-option "build_unflags=-std=gnu++11" \
+                --project-option "build_flags=-std=gnu++20"
+            fi
+          done
+
+  arduino-cli:
+    runs-on: [self-hosted, zekstack-ci]
+    needs: [metadata, source-audit, host-internal-tests, host-sanitizer-tests]
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        board:
+          - fqbn: esp32:esp32:esp32
+            name: esp32dev
+          - fqbn: esp32:esp32:esp32s3
+            name: esp32-s3-devkitc-1
+          - fqbn: esp32:esp32:esp32c3
+            name: esp32-c3-devkitm-1
+          - fqbn: esp32:esp32:esp32p4
+            name: esp32-p4-evboard
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Arduino CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64|amd64)
+              archive="arduino-cli_${ARDUINO_CLI_VERSION}_Linux_64bit.tar.gz"
+              ;;
+            aarch64|arm64)
+              archive="arduino-cli_${ARDUINO_CLI_VERSION}_Linux_ARM64.tar.gz"
+              ;;
+            *)
+              echo "Unsupported runner architecture: $(uname -m)"
+              exit 1
+              ;;
+          esac
+
+          install_dir="${RUNNER_TEMP}/arduino-cli"
+          url="https://github.com/arduino/arduino-cli/releases/download/v${ARDUINO_CLI_VERSION}/${archive}"
+          mkdir -p "${install_dir}"
+
+          curl --fail --location \
+            --retry 5 \
+            --retry-all-errors \
+            --retry-delay 2 \
+            --connect-timeout 15 \
+            --max-time 180 \
+            "${url}" \
+            --output "${RUNNER_TEMP}/${archive}"
+
+          tar -xzf "${RUNNER_TEMP}/${archive}" -C "${install_dir}" arduino-cli
+          echo "${install_dir}" >> "${GITHUB_PATH}"
+          "${install_dir}/arduino-cli" version
+
+      - name: Configure writable Arduino directories
+        run: |
+          echo "ARDUINO_DIRECTORIES_DATA=${RUNNER_TEMP}/knot-arduino/data" >> "${GITHUB_ENV}"
+          echo "ARDUINO_DIRECTORIES_DOWNLOADS=${RUNNER_TEMP}/knot-arduino/downloads" >> "${GITHUB_ENV}"
+          echo "ARDUINO_DIRECTORIES_USER=${RUNNER_TEMP}/knot-arduino/user" >> "${GITHUB_ENV}"
+
+      - name: Install ESP32 core
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install "esp32:esp32@${ESP32_CORE_VERSION}"
+
+      - name: Add local libraries to sketchbook
+        run: |
+          set -e
+          SKETCHBOOK_DIR="${ARDUINO_DIRECTORIES_USER}"
+          mkdir -p "${SKETCHBOOK_DIR}/libraries/Knot"
+          rsync -a --delete --exclude ".git" ./ "${SKETCHBOOK_DIR}/libraries/Knot/"
+          rm -rf "${SKETCHBOOK_DIR}/libraries/Strata"
+          git clone --depth 1 --branch "${STRATA_VERSION}" \
+            https://github.com/ZekStack/strata.git \
+            "${SKETCHBOOK_DIR}/libraries/Strata"
+
+      - name: Build examples (${{ matrix.board.name }})
+        env:
+          FQBN: ${{ matrix.board.fqbn }}
+        run: |
+          set -e
+          for d in examples/*; do
+            if [ -d "$d" ]; then
+              echo "Compiling $d"
+              arduino-cli compile \
+                --fqbn "${FQBN}" \
+                --build-property "compiler.cpp.extra_flags=-std=gnu++20" \
+                "$d"
+            fi
+          done
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - whitespace
+      - formatting
+      - metadata
+      - source-audit
+      - arduino-lint
+      - host-internal-tests
+      - host-sanitizer-tests
+      - build-examples
+      - arduino-cli
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+ || true
+            )
+          fi
+
+          if (( ${#files[@]} == 0 )); then
+            echo "No changed C++ files to format-check"
+            exit 0
+          fi
+
+          printf 'Checking formatting for:\n'
+          printf '  %s\n' "${files[@]}"
+          clang-format --dry-run --Werror "${files[@]}"
 
   metadata:
     runs-on: [self-hosted, zekstack-ci]
