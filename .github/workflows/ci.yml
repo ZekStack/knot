@@ -68,36 +68,28 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          files=()
-
-          collect_file() {
-            case "$1" in
-              src/*|tests/*|examples/*)
-                case "$1" in
-                  *.h|*.hpp|*.cpp|*.ino) files+=("$1") ;;
-                esac
-                ;;
-            esac
-          }
 
           if [[ "${EVENT_NAME}" == "workflow_dispatch" || -z "${BASE_SHA}" || "${BASE_SHA}" == "0000000000000000000000000000000000000000" ]]; then
-            while IFS= read -r file; do
-              collect_file "$file"
-            done < <(git ls-files src tests examples)
+            candidates=$(git ls-files -- '*.h' '*.hpp' '*.cpp' '*.ino')
           else
-            while IFS= read -r file; do
-              collect_file "$file"
-            done < <(git diff --name-only --diff-filter=ACMR "${BASE_SHA}" "${HEAD_SHA}" -- src tests examples)
+            candidates=$(git diff --name-only --diff-filter=ACMR "${BASE_SHA}" "${HEAD_SHA}" -- '*.h' '*.hpp' '*.cpp' '*.ino')
           fi
 
-          if (( ${#files[@]} == 0 )); then
+          checked=0
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            case "$file" in
+              src/*|tests/*|examples/*)
+                echo "Checking $file"
+                clang-format --dry-run --Werror "$file"
+                checked=1
+                ;;
+            esac
+          done <<< "$candidates"
+
+          if [[ "$checked" == "0" ]]; then
             echo "No changed C++ files to format-check"
-            exit 0
           fi
-
-          printf 'Checking formatting for:\n'
-          printf '  %s\n' "${files[@]}"
-          clang-format --dry-run --Werror "${files[@]}"
   metadata:
     runs-on: [self-hosted, zekstack-ci]
     steps:
