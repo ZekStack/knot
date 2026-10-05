@@ -133,6 +133,17 @@ Use `completed()`, `cancelled()`, and `inProgress()` to inspect the state. Cance
 
 Do not call `step()` and `cancel()` concurrently on the same operation from different tasks. Coordinate ownership through the calling task or Worker job.
 
+A default-constructed operation allocates no heap storage. `beginCompare()` lazily allocates its state according to `KnotConfig::memory.allocation`.
+
+## Memory diagnostics
+
+```cpp
+KnotDiagnostics knotDiag = knot.getDiagnostics();
+KnotCompareOperationDiagnostics operationDiag = operation.getDiagnostics();
+```
+
+Diagnostics keep requested `Strata::Placement` separate from observed `Strata::Region`. Cooperative-operation diagnostics also expose whether storage has been allocated and whether the operation is active.
+
 ## Metadata
 
 ```cpp
@@ -168,6 +179,7 @@ InvalidHash
 PasswordTooLong
 EntropyFailed
 HashFailed
+AllocationFailed
 BufferTooSmall
 UnsupportedVersion
 UnsupportedAlgorithm
