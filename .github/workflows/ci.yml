@@ -58,7 +58,7 @@ jobs:
       - name: Build and run host internal tests
         run: |
           set -e
-          COMMON_SOURCES="src/Knot.cpp src/KnotCompareOperation.cpp src/internal/KnotBase64Url.cpp src/internal/KnotCrypto.cpp src/internal/KnotFormat.cpp tests/host/KnotCryptoHostOpenSsl.cpp /tmp/knot-strata/src/strata/Allocation.cpp /tmp/knot-strata/src/strata/internal/PlatformGeneric.cpp"
+          COMMON_SOURCES="src/Knot.cpp src/KnotCompareOperation.cpp src/internal/KnotBase64Url.cpp src/internal/KnotCrypto.cpp src/internal/KnotFormat.cpp tests/host/KnotCryptoHostOpenSsl.cpp /tmp/knot-strata/src/strata/Allocation.cpp /tmp/knot-strata/src/strata/Diagnostics.cpp /tmp/knot-strata/src/strata/internal/PlatformGeneric.cpp"
 
           g++ -std=c++20 -Wall -Wextra -pedantic -pthread \
             -Itests/host/stubs \
@@ -107,7 +107,7 @@ jobs:
       - name: Build and run host sanitizer tests
         run: |
           set -e
-          COMMON_SOURCES="src/Knot.cpp src/KnotCompareOperation.cpp src/internal/KnotBase64Url.cpp src/internal/KnotCrypto.cpp src/internal/KnotFormat.cpp tests/host/KnotCryptoHostOpenSsl.cpp /tmp/knot-strata/src/strata/Allocation.cpp /tmp/knot-strata/src/strata/internal/PlatformGeneric.cpp"
+          COMMON_SOURCES="src/Knot.cpp src/KnotCompareOperation.cpp src/internal/KnotBase64Url.cpp src/internal/KnotCrypto.cpp src/internal/KnotFormat.cpp tests/host/KnotCryptoHostOpenSsl.cpp /tmp/knot-strata/src/strata/Allocation.cpp /tmp/knot-strata/src/strata/Diagnostics.cpp /tmp/knot-strata/src/strata/internal/PlatformGeneric.cpp"
 
           g++ -std=c++20 -Wall -Wextra -pedantic -pthread \
             -fsanitize=address,undefined -fno-omit-frame-pointer \
