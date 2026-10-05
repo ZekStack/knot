@@ -10,6 +10,8 @@ config.maxCost = 16;
 config.maxPasswordLength = 72;
 config.useMutex = true;
 config.useConstantTimeCompare = true;
+config.memory.allocation = Strata::Placement::Default;
+config.memory.taskStack = Strata::Placement::Internal;
 
 KnotResult result = knot.init(config);
 ```
@@ -24,6 +26,8 @@ KnotResult result = knot.init(config);
 | `maxPasswordLength` | `72` | Maximum password byte length. |
 | `useMutex` | `true` | Guards public methods with a FreeRTOS recursive mutex on ESP32. |
 | `useConstantTimeCompare` | `true` | Uses constant-time comparison for derived keys. |
+| `memory.allocation` | `Default` | Placement for Knot-owned cooperative-operation and HMAC wrapper storage. |
+| `memory.taskStack` | `Internal` | Shared ZekStack policy field; currently unused because Knot creates no task. |
 
 `defaultCost` must be inside `[minCost, maxCost]`.
 
@@ -51,3 +55,12 @@ Cost 14 is the secure default, not the demo or test setting. Examples and host t
 Production firmware must benchmark cost 14 on the exact ESP32 board and firmware profile used by the product. Lower the cost only with a documented latency and denial-of-service tradeoff.
 
 Existing `$knot$v1$c10$...` hashes remain verifiable. They become rehash candidates when checked against the new default cost 14.
+
+
+## Memory placement
+
+Knot v0.2.0 uses Strata v0.1.3 for owned dynamic storage.
+
+`Default` preserves Knot's existing allocation behavior. `Internal` forces cooperative-operation storage into internal RAM. `PreferExternal` prefers external RAM and may fall back internally. `RequireExternal` is strict and causes initialization to fail with `KnotCode::AllocationFailed` when external memory is unavailable.
+
+The small `KnotImpl` control object and FreeRTOS recursive-mutex control block remain internal regardless of `memory.allocation`. Synchronous hash/compare scratch buffers remain stack-based.
