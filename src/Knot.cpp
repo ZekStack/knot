@@ -2,22 +2,25 @@
 
 #include "internal/KnotCrypto.h"
 #include "internal/KnotFormat.h"
-#include "internal/KnotMutex.h"
+#include "internal/KnotImpl.h"
 
 #include <cstring>
-#include <new>
 
 namespace zek::knot {
-
-struct KnotImpl {
-	KnotConfig config;
-	bool initialized = false;
-	KnotMutex mutex;
-};
 
 namespace {
 
 KnotResult validateConfig(const KnotConfig &config) {
+	if (!Strata::validMemoryPolicy(config.memory)) {
+		return KnotResult::failure(KnotCode::InvalidArgument, "invalid memory policy");
+	}
+	if (config.memory.allocation == Strata::Placement::RequireExternal &&
+	    !Strata::supports(Strata::Placement::RequireExternal)) {
+		return KnotResult::failure(
+		    KnotCode::AllocationFailed,
+		    "required external memory is unavailable"
+		);
+	}
 	if (config.minCost < KNOT_MIN_COST || config.maxCost > KNOT_MAX_COST ||
 	    config.minCost > config.maxCost) {
 		return KnotResult::failure(KnotCode::InvalidCost, "invalid cost range");
@@ -284,14 +287,14 @@ bool needsRehashLocked(const KnotImpl &impl, const char *encodedHash, uint8_t ta
 
 } // namespace
 
-Knot::Knot() : _impl(new (std::nothrow) KnotImpl()) {
+Knot::Knot() : _impl(Strata::makeUnique<KnotImpl>(Strata::Placement::Internal)) {
 }
 
 Knot::~Knot() = default;
 
 KnotResult Knot::init(const KnotConfig &config) {
 	if (_impl == nullptr) {
-		return KnotResult::failure(KnotCode::InternalError, "knot allocation failed");
+		return KnotResult::failure(KnotCode::AllocationFailed, "knot allocation failed");
 	}
 
 	KnotLock lock(_impl->mutex, config.useMutex);
@@ -314,7 +317,7 @@ KnotResult Knot::init(const KnotConfig &config) {
 
 KnotResult Knot::deinit() {
 	if (_impl == nullptr) {
-		return KnotResult::failure(KnotCode::InternalError, "knot allocation failed");
+		return KnotResult::failure(KnotCode::AllocationFailed, "knot allocation failed");
 	}
 
 	KnotLock lock(_impl->mutex, _impl->config.useMutex);
@@ -395,7 +398,7 @@ KnotHashResult Knot::hash(
 
 KnotResult Knot::genSaltTo(char *output, size_t outputSize) {
 	if (_impl == nullptr) {
-		return KnotResult::failure(KnotCode::InternalError, "knot allocation failed");
+		return KnotResult::failure(KnotCode::AllocationFailed, "knot allocation failed");
 	}
 	if (output == nullptr || outputSize == 0) {
 		return KnotResult::failure(KnotCode::InvalidArgument, "salt output is required");
@@ -412,7 +415,7 @@ KnotResult Knot::genSaltTo(char *output, size_t outputSize) {
 
 KnotResult Knot::genSaltTo(uint8_t cost, char *output, size_t outputSize) {
 	if (_impl == nullptr) {
-		return KnotResult::failure(KnotCode::InternalError, "knot allocation failed");
+		return KnotResult::failure(KnotCode::AllocationFailed, "knot allocation failed");
 	}
 	if (output == nullptr || outputSize == 0) {
 		return KnotResult::failure(KnotCode::InvalidArgument, "salt output is required");
@@ -429,7 +432,7 @@ KnotResult Knot::genSaltTo(uint8_t cost, char *output, size_t outputSize) {
 
 KnotResult Knot::hashTo(const char *password, char *output, size_t outputSize) {
 	if (_impl == nullptr) {
-		return KnotResult::failure(KnotCode::InternalError, "knot allocation failed");
+		return KnotResult::failure(KnotCode::AllocationFailed, "knot allocation failed");
 	}
 	if (output == nullptr || outputSize == 0) {
 		return KnotResult::failure(KnotCode::InvalidArgument, "hash output is required");
@@ -464,7 +467,7 @@ KnotResult Knot::hashTo(const char *password, char *output, size_t outputSize) {
 
 KnotResult Knot::hashTo(const char *password, uint8_t cost, char *output, size_t outputSize) {
 	if (_impl == nullptr) {
-		return KnotResult::failure(KnotCode::InternalError, "knot allocation failed");
+		return KnotResult::failure(KnotCode::AllocationFailed, "knot allocation failed");
 	}
 	if (output == nullptr || outputSize == 0) {
 		return KnotResult::failure(KnotCode::InvalidArgument, "hash output is required");
@@ -504,7 +507,7 @@ KnotResult Knot::hashTo(
     size_t outputSize
 ) {
 	if (_impl == nullptr) {
-		return KnotResult::failure(KnotCode::InternalError, "knot allocation failed");
+		return KnotResult::failure(KnotCode::AllocationFailed, "knot allocation failed");
 	}
 	if (output == nullptr || outputSize == 0) {
 		return KnotResult::failure(KnotCode::InvalidArgument, "hash output is required");
@@ -544,7 +547,7 @@ KnotResult Knot::hashTo(
     size_t outputSize
 ) {
 	if (_impl == nullptr) {
-		return KnotResult::failure(KnotCode::InternalError, "knot allocation failed");
+		return KnotResult::failure(KnotCode::AllocationFailed, "knot allocation failed");
 	}
 	if (output == nullptr || outputSize == 0) {
 		return KnotResult::failure(KnotCode::InvalidArgument, "hash output is required");
@@ -567,7 +570,7 @@ KnotResult Knot::hashTo(
     size_t outputSize
 ) {
 	if (_impl == nullptr) {
-		return KnotResult::failure(KnotCode::InternalError, "knot allocation failed");
+		return KnotResult::failure(KnotCode::AllocationFailed, "knot allocation failed");
 	}
 	if (output == nullptr || outputSize == 0) {
 		return KnotResult::failure(KnotCode::InvalidArgument, "hash output is required");
@@ -590,7 +593,7 @@ KnotResult Knot::hashTo(
     size_t outputSize
 ) {
 	if (_impl == nullptr) {
-		return KnotResult::failure(KnotCode::InternalError, "knot allocation failed");
+		return KnotResult::failure(KnotCode::AllocationFailed, "knot allocation failed");
 	}
 	if (output == nullptr || outputSize == 0) {
 		return KnotResult::failure(KnotCode::InvalidArgument, "hash output is required");
@@ -608,7 +611,7 @@ KnotResult Knot::hashTo(
 KnotCompareResult Knot::compare(const char *password, const char *encodedHash) {
 	KnotCompareResult result;
 	if (_impl == nullptr) {
-		copyResult(result, KnotResult::failure(KnotCode::InternalError, "knot allocation failed"));
+		copyResult(result, KnotResult::failure(KnotCode::AllocationFailed, "knot allocation failed"));
 		return result;
 	}
 
@@ -646,7 +649,7 @@ KnotCompareResult Knot::compare(
 ) {
 	KnotCompareResult result;
 	if (_impl == nullptr) {
-		copyResult(result, KnotResult::failure(KnotCode::InternalError, "knot allocation failed"));
+		copyResult(result, KnotResult::failure(KnotCode::AllocationFailed, "knot allocation failed"));
 		return result;
 	}
 
@@ -716,6 +719,25 @@ bool Knot::needsRehash(const char *encodedHash, uint8_t targetCost) const {
 	return needsRehashLocked(*_impl, encodedHash, targetCost);
 }
 
+KnotDiagnostics Knot::getDiagnostics() const {
+	KnotDiagnostics diagnostics;
+	if (!_impl) {
+		return diagnostics;
+	}
+
+	diagnostics.implementationRegion = Strata::regionOf(_impl.get());
+	diagnostics.mutexControlRegion = _impl->mutex.controlRegion();
+	diagnostics.allocationPlacement = _impl->config.memory.allocation;
+	diagnostics.mutexEnabled = _impl->config.useMutex;
+
+	KnotLock lock(_impl->mutex, _impl->config.useMutex);
+	if (!lock) {
+		return diagnostics;
+	}
+	diagnostics.initialized = _impl->initialized;
+	return diagnostics;
+}
+
 const char *Knot::codeToString(KnotCode code) const {
 	switch (code) {
 	case KnotCode::Ok:
@@ -738,6 +760,8 @@ const char *Knot::codeToString(KnotCode code) const {
 		return "EntropyFailed";
 	case KnotCode::HashFailed:
 		return "HashFailed";
+	case KnotCode::AllocationFailed:
+		return "AllocationFailed";
 	case KnotCode::BufferTooSmall:
 		return "BufferTooSmall";
 	case KnotCode::UnsupportedVersion:
