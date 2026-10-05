@@ -2,22 +2,16 @@
 
 #include "internal/KnotCrypto.h"
 #include "internal/KnotFormat.h"
-#include "internal/KnotMutex.h"
+#include "internal/KnotImpl.h"
 
 #include <cstring>
-#include <new>
+#include <utility>
 
 namespace zek::knot {
 
-// Keep this definition identical to the private implementation in Knot.cpp.
-struct KnotImpl {
-	KnotConfig config;
-	bool initialized = false;
-	KnotMutex mutex;
-};
-
 struct KnotCompareOperationImpl {
 	internal::HmacSha256Context *hmac = nullptr;
+	Strata::Placement allocationPlacement = Strata::Placement::Default;
 	uint8_t password[KNOT_MAX_PASSWORD_LENGTH] = {};
 	size_t passwordSize = 0;
 	uint8_t salt[KNOT_RAW_SALT_LENGTH] = {};
@@ -168,11 +162,37 @@ KnotResult prepareLocked(
 	return KnotResult::success();
 }
 
+KnotResult ensureOperationStorage(
+    Strata::UniquePtr<KnotCompareOperationImpl> &storage,
+    Strata::Placement placement
+) {
+	if (storage && storage->allocationPlacement == placement) {
+		resetOperation(*storage);
+		return KnotResult::success();
+	}
+
+	auto replacement = Strata::makeUnique<KnotCompareOperationImpl>(placement);
+	if (!replacement) {
+		return KnotResult::failure(
+		    KnotCode::AllocationFailed,
+		    "compare operation allocation failed"
+		);
+	}
+	replacement->allocationPlacement = placement;
+
+	if (storage) {
+		clearSecrets(*storage);
+	}
+	storage = std::move(replacement);
+	return KnotResult::success();
+}
+
 KnotResult initializeHmac(KnotCompareOperationImpl &operation) {
 	KnotResult result = internal::hmacSha256Create(
 	    operation.hmac,
 	    operation.password,
-	    operation.passwordSize
+	    operation.passwordSize,
+	    operation.allocationPlacement
 	);
 	if (!result) {
 		const uint32_t total = operation.totalIterationsSnapshot;
@@ -192,9 +212,7 @@ KnotResult initializeHmac(KnotCompareOperationImpl &operation) {
 
 } // namespace
 
-KnotCompareOperation::KnotCompareOperation()
-    : _impl(new (std::nothrow) KnotCompareOperationImpl()) {
-}
+KnotCompareOperation::KnotCompareOperation() = default;
 
 KnotCompareOperation::~KnotCompareOperation() {
 	if (_impl != nullptr) {
@@ -205,8 +223,8 @@ KnotCompareOperation::~KnotCompareOperation() {
 KnotStepResult KnotCompareOperation::step(uint32_t iterationBudget) {
 	KnotStepResult result;
 	if (_impl == nullptr) {
-		result.code = KnotCode::InternalError;
-		result.message = "compare operation allocation failed";
+		result.code = KnotCode::NotInitialized;
+		result.message = "compare operation has not been started";
 		result.status = KnotStepStatus::Failed;
 		return result;
 	}
@@ -300,7 +318,7 @@ KnotStepResult KnotCompareOperation::step(uint32_t iterationBudget) {
 
 KnotResult KnotCompareOperation::cancel() {
 	if (_impl == nullptr) {
-		return KnotResult::failure(KnotCode::InternalError, "compare operation allocation failed");
+		return KnotResult::success("compare operation is not active");
 	}
 	if (_impl->status != KnotStepStatus::InProgress) {
 		return KnotResult::success("compare operation is not active");
@@ -322,48 +340,64 @@ bool KnotCompareOperation::active() const {
 	return _impl != nullptr && _impl->status == KnotStepStatus::InProgress;
 }
 
+KnotCompareOperationDiagnostics KnotCompareOperation::getDiagnostics() const {
+	KnotCompareOperationDiagnostics diagnostics;
+	if (!_impl) {
+		return diagnostics;
+	}
+
+	diagnostics.storageAllocated = true;
+	diagnostics.active = _impl->status == KnotStepStatus::InProgress;
+	diagnostics.requestedPlacement = _impl->allocationPlacement;
+	diagnostics.operationRegion = Strata::regionOf(_impl.get());
+	diagnostics.hmacContextRegion = Strata::regionOf(_impl->hmac);
+	return diagnostics;
+}
+
 KnotResult Knot::beginCompare(
     KnotCompareOperation &operation,
     const char *password,
     const char *encodedHash
 ) {
-	if (_impl == nullptr) {
-		return KnotResult::failure(KnotCode::InternalError, "knot allocation failed");
+	if (!_impl) {
+		return KnotResult::failure(KnotCode::AllocationFailed, "knot allocation failed");
 	}
-	if (operation._impl == nullptr) {
-		return KnotResult::failure(KnotCode::InternalError, "compare operation allocation failed");
-	}
-	if (operation._impl->status == KnotStepStatus::InProgress) {
+	if (operation.active()) {
 		return KnotResult::failure(KnotCode::AlreadyInitialized, "compare operation is already active");
 	}
 
-	resetOperation(*operation._impl);
-	{
-		KnotLock lock(_impl->mutex, _impl->config.useMutex);
-		if (!lock) {
-			return KnotResult::failure(KnotCode::InternalError, "failed to lock knot");
-		}
-		KnotResult result = ensureReady(_impl.get());
-		if (!result) {
-			return result;
-		}
-		size_t passwordSize = 0;
-		result = boundedCStringLength(password, _impl->config.maxPasswordLength, passwordSize);
-		if (!result) {
-			return result;
-		}
-		result = prepareLocked(
-		    *_impl,
-		    *operation._impl,
-		    reinterpret_cast<const uint8_t *>(password),
-		    passwordSize,
-		    encodedHash
-		);
-		if (!result) {
-			resetOperation(*operation._impl);
-			return result;
-		}
+	KnotLock lock(_impl->mutex, _impl->config.useMutex);
+	if (!lock) {
+		return KnotResult::failure(KnotCode::InternalError, "failed to lock knot");
 	}
+	KnotResult result = ensureReady(_impl.get());
+	if (!result) {
+		return result;
+	}
+
+	result = ensureOperationStorage(operation._impl, _impl->config.memory.allocation);
+	if (!result) {
+		return result;
+	}
+
+	size_t passwordSize = 0;
+	result = boundedCStringLength(password, _impl->config.maxPasswordLength, passwordSize);
+	if (!result) {
+		resetOperation(*operation._impl);
+		return result;
+	}
+	result = prepareLocked(
+	    *_impl,
+	    *operation._impl,
+	    reinterpret_cast<const uint8_t *>(password),
+	    passwordSize,
+	    encodedHash
+	);
+	if (!result) {
+		resetOperation(*operation._impl);
+		return result;
+	}
+
 	return initializeHmac(*operation._impl);
 }
 
@@ -373,34 +407,39 @@ KnotResult Knot::beginCompare(
     size_t passwordLen,
     const char *encodedHash
 ) {
-	if (_impl == nullptr) {
-		return KnotResult::failure(KnotCode::InternalError, "knot allocation failed");
+	if (!_impl) {
+		return KnotResult::failure(KnotCode::AllocationFailed, "knot allocation failed");
 	}
-	if (operation._impl == nullptr) {
-		return KnotResult::failure(KnotCode::InternalError, "compare operation allocation failed");
-	}
-	if (operation._impl->status == KnotStepStatus::InProgress) {
+	if (operation.active()) {
 		return KnotResult::failure(KnotCode::AlreadyInitialized, "compare operation is already active");
 	}
 
-	resetOperation(*operation._impl);
-	{
-		KnotLock lock(_impl->mutex, _impl->config.useMutex);
-		if (!lock) {
-			return KnotResult::failure(KnotCode::InternalError, "failed to lock knot");
-		}
-		KnotResult result = prepareLocked(
-		    *_impl,
-		    *operation._impl,
-		    password,
-		    passwordLen,
-		    encodedHash
-		);
-		if (!result) {
-			resetOperation(*operation._impl);
-			return result;
-		}
+	KnotLock lock(_impl->mutex, _impl->config.useMutex);
+	if (!lock) {
+		return KnotResult::failure(KnotCode::InternalError, "failed to lock knot");
 	}
+	KnotResult result = ensureReady(_impl.get());
+	if (!result) {
+		return result;
+	}
+
+	result = ensureOperationStorage(operation._impl, _impl->config.memory.allocation);
+	if (!result) {
+		return result;
+	}
+
+	result = prepareLocked(
+	    *_impl,
+	    *operation._impl,
+	    password,
+	    passwordLen,
+	    encodedHash
+	);
+	if (!result) {
+		resetOperation(*operation._impl);
+		return result;
+	}
+
 	return initializeHmac(*operation._impl);
 }
 
