@@ -296,6 +296,9 @@ KnotResult Knot::init(const KnotConfig &config) {
 	if (_impl == nullptr) {
 		return KnotResult::failure(KnotCode::AllocationFailed, "knot allocation failed");
 	}
+	if (config.useMutex && !_impl->mutex) {
+		return KnotResult::failure(KnotCode::AllocationFailed, "knot mutex allocation failed");
+	}
 
 	KnotLock lock(_impl->mutex, config.useMutex);
 	if (!lock) {
