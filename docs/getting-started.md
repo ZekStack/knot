@@ -47,10 +47,17 @@ if (check.match) {
 
 ## Encoded format
 
-Knot v0.1 writes hashes like this:
+Knot v0.2.0 continues to write the same `v1` encoded hashes:
 
 ```txt
 $knot$v1$c14$<base64url-salt>$<base64url-derived-key>
 ```
 
 The hash contains the algorithm marker, version, cost, salt, and derived key. Do not store salts separately.
+
+
+## Memory dependency
+
+Knot v0.2.0 depends on Strata v0.1.3. PlatformIO resolves Strata transitively from Knot's metadata. Arduino IDE users should install Strata alongside Knot.
+
+The default memory policy preserves Knot's previous allocation behavior. Configure `KnotConfig::memory.allocation` only when the application needs explicit internal or external placement.
