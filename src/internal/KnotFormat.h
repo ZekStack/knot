@@ -14,13 +14,8 @@ struct KnotParsedValue {
 	bool hasHash = false;
 };
 
-KnotResult encodeSalt(
-    uint8_t cost,
-    const uint8_t *salt,
-    char *output,
-    size_t outputSize,
-    size_t &written
-);
+KnotResult
+encodeSalt(uint8_t cost, const uint8_t *salt, char *output, size_t outputSize, size_t &written);
 KnotResult encodeHash(
     uint8_t cost,
     const uint8_t *salt,

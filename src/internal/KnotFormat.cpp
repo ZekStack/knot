@@ -33,11 +33,8 @@ bool parseCost(const char *begin, const char *end, uint8_t &cost) {
 	return true;
 }
 
-zek::knot::KnotResult parseEncoded(
-    const char *input,
-    bool requireHash,
-    zek::knot::internal::KnotParsedValue &parsed
-) {
+zek::knot::KnotResult
+parseEncoded(const char *input, bool requireHash, zek::knot::internal::KnotParsedValue &parsed) {
 	using namespace zek::knot;
 	using namespace zek::knot::internal;
 
@@ -96,13 +93,8 @@ zek::knot::KnotResult parseEncoded(
 	}
 
 	size_t decoded = 0;
-	KnotResult result = base64UrlDecode(
-	    saltStart,
-	    saltEncodedLength,
-	    parsed.salt,
-	    sizeof(parsed.salt),
-	    decoded
-	);
+	KnotResult result =
+	    base64UrlDecode(saltStart, saltEncodedLength, parsed.salt, sizeof(parsed.salt), decoded);
 	if (!result) {
 		result.code = requireHash ? KnotCode::InvalidHash : KnotCode::InvalidSalt;
 		return result;
@@ -143,13 +135,8 @@ zek::knot::KnotResult parseEncoded(
 
 namespace zek::knot::internal {
 
-KnotResult encodeSalt(
-    uint8_t cost,
-    const uint8_t *salt,
-    char *output,
-    size_t outputSize,
-    size_t &written
-) {
+KnotResult
+encodeSalt(uint8_t cost, const uint8_t *salt, char *output, size_t outputSize, size_t &written) {
 	written = 0;
 	if (salt == nullptr || output == nullptr) {
 		return KnotResult::failure(KnotCode::InvalidArgument, "salt output is required");
@@ -157,13 +144,8 @@ KnotResult encodeSalt(
 
 	char encodedSalt[32] = {};
 	size_t saltWritten = 0;
-	KnotResult result = base64UrlEncode(
-	    salt,
-	    KNOT_RAW_SALT_LENGTH,
-	    encodedSalt,
-	    sizeof(encodedSalt),
-	    saltWritten
-	);
+	KnotResult result =
+	    base64UrlEncode(salt, KNOT_RAW_SALT_LENGTH, encodedSalt, sizeof(encodedSalt), saltWritten);
 	if (!result) {
 		return result;
 	}
@@ -197,35 +179,18 @@ KnotResult encodeHash(
 	char encodedSalt[32] = {};
 	char encodedHash[64] = {};
 	size_t ignored = 0;
-	KnotResult result = base64UrlEncode(
-	    salt,
-	    KNOT_RAW_SALT_LENGTH,
-	    encodedSalt,
-	    sizeof(encodedSalt),
-	    ignored
-	);
+	KnotResult result =
+	    base64UrlEncode(salt, KNOT_RAW_SALT_LENGTH, encodedSalt, sizeof(encodedSalt), ignored);
 	if (!result) {
 		return result;
 	}
-	result = base64UrlEncode(
-	    hash,
-	    KNOT_RAW_HASH_LENGTH,
-	    encodedHash,
-	    sizeof(encodedHash),
-	    ignored
-	);
+	result = base64UrlEncode(hash, KNOT_RAW_HASH_LENGTH, encodedHash, sizeof(encodedHash), ignored);
 	if (!result) {
 		return result;
 	}
 
-	const int count = std::snprintf(
-	    output,
-	    outputSize,
-	    "$knot$v1$c%u$%s$%s",
-	    cost,
-	    encodedSalt,
-	    encodedHash
-	);
+	const int count =
+	    std::snprintf(output, outputSize, "$knot$v1$c%u$%s$%s", cost, encodedSalt, encodedHash);
 	if (count < 0) {
 		return KnotResult::failure(KnotCode::InternalError, "failed to encode hash");
 	}

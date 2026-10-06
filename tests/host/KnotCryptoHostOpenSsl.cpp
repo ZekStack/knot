@@ -53,10 +53,7 @@ KnotResult pbkdf2Sha256(
 }
 
 KnotResult hmacSha256Create(
-    HmacSha256Context *&context,
-    const uint8_t *key,
-    size_t keySize,
-    Strata::Placement placement
+    HmacSha256Context *&context, const uint8_t *key, size_t keySize, Strata::Placement placement
 ) {
 	if (context != nullptr || key == nullptr || keySize > KNOT_MAX_PASSWORD_LENGTH) {
 		return KnotResult::failure(KnotCode::InvalidArgument, "invalid hmac input");

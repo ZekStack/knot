@@ -79,10 +79,7 @@ KnotResult pbkdf2Sha256(
 }
 
 KnotResult hmacSha256Create(
-    HmacSha256Context *&context,
-    const uint8_t *key,
-    size_t keySize,
-    Strata::Placement placement
+    HmacSha256Context *&context, const uint8_t *key, size_t keySize, Strata::Placement placement
 ) {
 	if (context != nullptr || key == nullptr) {
 		return KnotResult::failure(KnotCode::InvalidArgument, "invalid hmac input");
@@ -119,9 +116,8 @@ KnotResult hmacSha256Digest(
     uint8_t *output,
     size_t outputSize
 ) {
-	if (context == nullptr || !context->initialized ||
-	    (input == nullptr && inputSize != 0) || output == nullptr ||
-	    outputSize < KNOT_RAW_HASH_LENGTH) {
+	if (context == nullptr || !context->initialized || (input == nullptr && inputSize != 0) ||
+	    output == nullptr || outputSize < KNOT_RAW_HASH_LENGTH) {
 		return KnotResult::failure(KnotCode::InvalidArgument, "invalid hmac input");
 	}
 

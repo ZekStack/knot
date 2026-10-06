@@ -23,10 +23,7 @@ KnotResult pbkdf2Sha256(
 );
 
 KnotResult hmacSha256Create(
-    HmacSha256Context *&context,
-    const uint8_t *key,
-    size_t keySize,
-    Strata::Placement placement
+    HmacSha256Context *&context, const uint8_t *key, size_t keySize, Strata::Placement placement
 );
 KnotResult hmacSha256Digest(
     HmacSha256Context *context,

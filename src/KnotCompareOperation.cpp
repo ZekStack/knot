@@ -32,7 +32,8 @@ struct KnotCompareOperationImpl {
 
 namespace {
 
-KnotResult validatePassword(const KnotConfig &config, const uint8_t *password, size_t passwordSize) {
+KnotResult
+validatePassword(const KnotConfig &config, const uint8_t *password, size_t passwordSize) {
 	if (password == nullptr) {
 		return KnotResult::failure(KnotCode::InvalidArgument, "password is required");
 	}
@@ -163,8 +164,7 @@ KnotResult prepareLocked(
 }
 
 KnotResult ensureOperationStorage(
-    Strata::UniquePtr<KnotCompareOperationImpl> &storage,
-    Strata::Placement placement
+    Strata::UniquePtr<KnotCompareOperationImpl> &storage, Strata::Placement placement
 ) {
 	if (storage && storage->allocationPlacement == placement) {
 		resetOperation(*storage);
@@ -240,7 +240,11 @@ KnotStepResult KnotCompareOperation::step(uint32_t iterationBudget) {
 		return makeStepResult(impl);
 	}
 	if (iterationBudget == 0) {
-		return failOperation(impl, KnotCode::InvalidArgument, "iteration budget must be greater than zero");
+		return failOperation(
+		    impl,
+		    KnotCode::InvalidArgument,
+		    "iteration budget must be greater than zero"
+		);
 	}
 
 	uint32_t completedThisStep = 0;
@@ -264,23 +268,14 @@ KnotStepResult KnotCompareOperation::step(uint32_t iterationBudget) {
 			}
 		} else {
 			uint8_t nextU[KNOT_RAW_HASH_LENGTH] = {};
-			cryptoResult = internal::hmacSha256Digest(
-			    impl.hmac,
-			    impl.u,
-			    sizeof(impl.u),
-			    nextU,
-			    sizeof(nextU)
-			);
+			cryptoResult =
+			    internal::hmacSha256Digest(impl.hmac, impl.u, sizeof(impl.u), nextU, sizeof(nextU));
 			if (cryptoResult) {
 				std::memcpy(impl.u, nextU, sizeof(impl.u));
 				for (size_t i = 0; i < sizeof(impl.accumulated); i++) {
 					impl.accumulated[i] ^= impl.u[i];
 				}
-				std::memcpy(
-				    impl.derivedKeyBlock,
-				    impl.accumulated,
-				    sizeof(impl.derivedKeyBlock)
-				);
+				std::memcpy(impl.derivedKeyBlock, impl.accumulated, sizeof(impl.derivedKeyBlock));
 			}
 			internal::secureZero(nextU, sizeof(nextU));
 		}
@@ -298,13 +293,15 @@ KnotStepResult KnotCompareOperation::step(uint32_t iterationBudget) {
 		return makeStepResult(impl);
 	}
 
-	const bool match = impl.useConstantTimeCompare
-	    ? internal::constantTimeEqual(
-	          impl.derivedKeyBlock,
-	          impl.expectedHash,
-	          sizeof(impl.derivedKeyBlock)
-	      )
-	    : std::memcmp(impl.derivedKeyBlock, impl.expectedHash, sizeof(impl.derivedKeyBlock)) == 0;
+	const bool match =
+	    impl.useConstantTimeCompare
+	        ? internal::constantTimeEqual(
+	              impl.derivedKeyBlock,
+	              impl.expectedHash,
+	              sizeof(impl.derivedKeyBlock)
+	          )
+	        : std::memcmp(impl.derivedKeyBlock, impl.expectedHash, sizeof(impl.derivedKeyBlock)) ==
+	              0;
 	const uint32_t total = impl.totalIterationsSnapshot;
 	clearSecrets(impl);
 	impl.completedIterations = total;
@@ -354,16 +351,16 @@ KnotCompareOperationDiagnostics KnotCompareOperation::getDiagnostics() const {
 	return diagnostics;
 }
 
-KnotResult Knot::beginCompare(
-    KnotCompareOperation &operation,
-    const char *password,
-    const char *encodedHash
-) {
+KnotResult
+Knot::beginCompare(KnotCompareOperation &operation, const char *password, const char *encodedHash) {
 	if (!_impl) {
 		return KnotResult::failure(KnotCode::AllocationFailed, "knot allocation failed");
 	}
 	if (operation.active()) {
-		return KnotResult::failure(KnotCode::AlreadyInitialized, "compare operation is already active");
+		return KnotResult::failure(
+		    KnotCode::AlreadyInitialized,
+		    "compare operation is already active"
+		);
 	}
 
 	KnotLock lock(_impl->mutex, _impl->config.useMutex);
@@ -411,7 +408,10 @@ KnotResult Knot::beginCompare(
 		return KnotResult::failure(KnotCode::AllocationFailed, "knot allocation failed");
 	}
 	if (operation.active()) {
-		return KnotResult::failure(KnotCode::AlreadyInitialized, "compare operation is already active");
+		return KnotResult::failure(
+		    KnotCode::AlreadyInitialized,
+		    "compare operation is already active"
+		);
 	}
 
 	KnotLock lock(_impl->mutex, _impl->config.useMutex);
@@ -428,13 +428,7 @@ KnotResult Knot::beginCompare(
 		return result;
 	}
 
-	result = prepareLocked(
-	    *_impl,
-	    *operation._impl,
-	    password,
-	    passwordLen,
-	    encodedHash
-	);
+	result = prepareLocked(*_impl, *operation._impl, password, passwordLen, encodedHash);
 	if (!result) {
 		resetOperation(*operation._impl);
 		return result;

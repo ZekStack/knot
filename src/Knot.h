@@ -186,19 +186,11 @@ class Knot {
 
 	KnotResult hashTo(const char *password, char *output, size_t outputSize);
 	KnotResult hashTo(const char *password, uint8_t cost, char *output, size_t outputSize);
-	KnotResult hashTo(
-	    const char *password,
-	    const char *encodedSalt,
-	    char *output,
-	    size_t outputSize
-	);
+	KnotResult
+	hashTo(const char *password, const char *encodedSalt, char *output, size_t outputSize);
 	KnotResult hashTo(const uint8_t *password, size_t passwordLen, char *output, size_t outputSize);
 	KnotResult hashTo(
-	    const uint8_t *password,
-	    size_t passwordLen,
-	    uint8_t cost,
-	    char *output,
-	    size_t outputSize
+	    const uint8_t *password, size_t passwordLen, uint8_t cost, char *output, size_t outputSize
 	);
 	KnotResult hashTo(
 	    const uint8_t *password,
@@ -211,11 +203,8 @@ class Knot {
 	KnotCompareResult compare(const char *password, const char *encodedHash);
 	KnotCompareResult compare(const uint8_t *password, size_t passwordLen, const char *encodedHash);
 
-	KnotResult beginCompare(
-	    KnotCompareOperation &operation,
-	    const char *password,
-	    const char *encodedHash
-	);
+	KnotResult
+	beginCompare(KnotCompareOperation &operation, const char *password, const char *encodedHash);
 	KnotResult beginCompare(
 	    KnotCompareOperation &operation,
 	    const uint8_t *password,

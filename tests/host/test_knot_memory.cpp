@@ -38,7 +38,10 @@ int main() {
 	expect(!operationDiag.storageAllocated, "operation storage is lazy");
 	expect(!operationDiag.active, "fresh operation is inactive");
 	KnotStepResult idle = operation.step(1);
-	expect(!idle && idle.code == KnotCode::NotInitialized, "step before begin stays NotInitialized");
+	expect(
+	    !idle && idle.code == KnotCode::NotInitialized,
+	    "step before begin stays NotInitialized"
+	);
 
 	Knot first;
 	KnotConfig internal = baseConfig();

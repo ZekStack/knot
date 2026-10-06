@@ -31,13 +31,8 @@ void testBase64Url() {
 	expect(result && std::strcmp(encoded, "aGVsbG8_") == 0 && written == 8, "base64url encode");
 
 	uint8_t decoded[64] = {};
-	result = zek::knot::internal::base64UrlDecode(
-	    encoded,
-	    written,
-	    decoded,
-	    sizeof(decoded),
-	    written
-	);
+	result =
+	    zek::knot::internal::base64UrlDecode(encoded, written, decoded, sizeof(decoded), written);
 	expect(result && written == 6 && std::memcmp(decoded, "hello?", 6) == 0, "base64url decode");
 
 	result = zek::knot::internal::base64UrlDecode("abc*", 4, decoded, sizeof(decoded), written);
@@ -88,38 +83,9 @@ void testFormat() {
 	    0x0f,
 	};
 	const uint8_t hash[KNOT_RAW_HASH_LENGTH] = {
-	    0x25,
-	    0xeb,
-	    0x86,
-	    0xac,
-	    0xc7,
-	    0x6e,
-	    0x43,
-	    0x01,
-	    0x8f,
-	    0x18,
-	    0xb9,
-	    0xa8,
-	    0xf9,
-	    0x0c,
-	    0x2f,
-	    0xed,
-	    0x46,
-	    0x2d,
-	    0x1c,
-	    0x79,
-	    0x9e,
-	    0x83,
-	    0xd4,
-	    0x8a,
-	    0xe3,
-	    0xd7,
-	    0xc6,
-	    0x90,
-	    0x46,
-	    0xa6,
-	    0x0b,
-	    0x67,
+	    0x25, 0xeb, 0x86, 0xac, 0xc7, 0x6e, 0x43, 0x01, 0x8f, 0x18, 0xb9,
+	    0xa8, 0xf9, 0x0c, 0x2f, 0xed, 0x46, 0x2d, 0x1c, 0x79, 0x9e, 0x83,
+	    0xd4, 0x8a, 0xe3, 0xd7, 0xc6, 0x90, 0x46, 0xa6, 0x0b, 0x67,
 	};
 
 	char encodedSalt[KNOT_MAX_SALT_LENGTH + 1] = {};
@@ -223,38 +189,9 @@ void testCryptoBoundary() {
 	    0x0f,
 	};
 	const uint8_t expected[KNOT_RAW_HASH_LENGTH] = {
-	    0x25,
-	    0xeb,
-	    0x86,
-	    0xac,
-	    0xc7,
-	    0x6e,
-	    0x43,
-	    0x01,
-	    0x8f,
-	    0x18,
-	    0xb9,
-	    0xa8,
-	    0xf9,
-	    0x0c,
-	    0x2f,
-	    0xed,
-	    0x46,
-	    0x2d,
-	    0x1c,
-	    0x79,
-	    0x9e,
-	    0x83,
-	    0xd4,
-	    0x8a,
-	    0xe3,
-	    0xd7,
-	    0xc6,
-	    0x90,
-	    0x46,
-	    0xa6,
-	    0x0b,
-	    0x67,
+	    0x25, 0xeb, 0x86, 0xac, 0xc7, 0x6e, 0x43, 0x01, 0x8f, 0x18, 0xb9,
+	    0xa8, 0xf9, 0x0c, 0x2f, 0xed, 0x46, 0x2d, 0x1c, 0x79, 0x9e, 0x83,
+	    0xd4, 0x8a, 0xe3, 0xd7, 0xc6, 0x90, 0x46, 0xa6, 0x0b, 0x67,
 	};
 
 	uint8_t derived[KNOT_RAW_HASH_LENGTH] = {};
@@ -295,11 +232,10 @@ void testPublicApi() {
 	const char *encodedSalt = "$knot$v1$c4$AAECAwQFBgcICQoLDA0ODw";
 	KnotHashResult hash = knot.hash("password", encodedSalt);
 	expect(
-	    hash &&
-	        std::strcmp(
-	            hash.value,
-	            "$knot$v1$c4$AAECAwQFBgcICQoLDA0ODw$JeuGrMduQwGPGLmo-Qwv7UYtHHmeg9SK49fGkEamC2c"
-	        ) == 0,
+	    hash && std::strcmp(
+	                hash.value,
+	                "$knot$v1$c4$AAECAwQFBgcICQoLDA0ODw$JeuGrMduQwGPGLmo-Qwv7UYtHHmeg9SK49fGkEamC2c"
+	            ) == 0,
 	    "hash with encoded salt"
 	);
 
@@ -365,7 +301,12 @@ void testPublicApiEdgeCases() {
 	expect(!hash && hash.code == KnotCode::InvalidArgument, "null empty byte password");
 	char nullHashOutput[KNOT_MAX_HASH_LENGTH + 1] = {};
 	nullHashOutput[0] = 'x';
-	result = knot.hashTo(static_cast<const char *>(nullptr), encodedSalt, nullHashOutput, sizeof(nullHashOutput));
+	result = knot.hashTo(
+	    static_cast<const char *>(nullptr),
+	    encodedSalt,
+	    nullHashOutput,
+	    sizeof(nullHashOutput)
+	);
 	expect(
 	    !result && result.code == KnotCode::InvalidArgument && nullHashOutput[0] == '\0',
 	    "null hashTo password clears output"
@@ -417,7 +358,10 @@ void testPublicApiEdgeCases() {
 	expect(static_cast<bool>(result), "short limit init succeeds");
 	char tooLongCString[5] = {'a', 'b', 'c', 'd', 'e'};
 	hash = shortLimit.hash(tooLongCString, encodedSalt);
-	expect(!hash && hash.code == KnotCode::PasswordTooLong, "bounded c-string hash rejects over limit");
+	expect(
+	    !hash && hash.code == KnotCode::PasswordTooLong,
+	    "bounded c-string hash rejects over limit"
+	);
 	hash = shortLimit.hash(tooLongCString, static_cast<uint8_t>(3));
 	expect(
 	    !hash && hash.code == KnotCode::PasswordTooLong,

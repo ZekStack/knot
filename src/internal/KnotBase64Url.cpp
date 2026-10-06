@@ -35,11 +35,7 @@ size_t base64UrlEncodedLength(size_t inputSize) {
 }
 
 KnotResult base64UrlEncode(
-    const uint8_t *input,
-    size_t inputSize,
-    char *output,
-    size_t outputSize,
-    size_t &written
+    const uint8_t *input, size_t inputSize, char *output, size_t outputSize, size_t &written
 ) {
 	written = 0;
 	if ((input == nullptr && inputSize > 0) || output == nullptr) {
@@ -48,7 +44,10 @@ KnotResult base64UrlEncode(
 
 	const size_t required = base64UrlEncodedLength(inputSize);
 	if (outputSize <= required) {
-		return KnotResult::failure(KnotCode::BufferTooSmall, "base64url output buffer is too small");
+		return KnotResult::failure(
+		    KnotCode::BufferTooSmall,
+		    "base64url output buffer is too small"
+		);
 	}
 
 	size_t out = 0;
@@ -76,11 +75,7 @@ KnotResult base64UrlEncode(
 }
 
 KnotResult base64UrlDecode(
-    const char *input,
-    size_t inputSize,
-    uint8_t *output,
-    size_t outputSize,
-    size_t &written
+    const char *input, size_t inputSize, uint8_t *output, size_t outputSize, size_t &written
 ) {
 	written = 0;
 	if ((input == nullptr && inputSize > 0) || output == nullptr) {
@@ -103,7 +98,10 @@ KnotResult base64UrlDecode(
 		bits += 6;
 		if (bits >= 0) {
 			if (out >= outputSize) {
-				return KnotResult::failure(KnotCode::BufferTooSmall, "base64url output buffer is too small");
+				return KnotResult::failure(
+				    KnotCode::BufferTooSmall,
+				    "base64url output buffer is too small"
+				);
 			}
 			output[out++] = static_cast<uint8_t>((buffer >> bits) & 0xFF);
 			bits -= 8;

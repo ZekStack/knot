@@ -4,7 +4,7 @@
 #include <cstring>
 
 class PasswordStore {
- public:
+  public:
 	bool begin() {
 		KnotConfig config;
 		config.defaultCost = 4;
