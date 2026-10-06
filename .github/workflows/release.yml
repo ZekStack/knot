@@ -1,17 +1,11 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
-
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
+  workflow_call:
 
 jobs:
   create-release:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, zekstack-ci]
     permissions:
       contents: write
     steps:
@@ -42,4 +36,4 @@ jobs:
           generate_release_notes: false
           body_path: release-changelog.md
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
