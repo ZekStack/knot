@@ -1,6 +1,6 @@
 # Memory
 
-Knot v0.2.0 routes Knot-owned dynamic allocations and synchronization storage through Strata v0.1.3 while preserving the bounded public API and existing password-hash format.
+Knot v0.2.0 routes Knot-owned dynamic allocations and synchronization storage through Strata v0.1.4 while preserving the bounded public API and existing password-hash format.
 
 ## Default policy
 

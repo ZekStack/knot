@@ -43,9 +43,9 @@ require(
 )
 
 metadata = json.loads((ROOT / "library.json").read_text())
-expected = "https://github.com/ZekStack/strata.git#v0.1.3"
+expected = "https://github.com/ZekStack/strata.git#v0.1.4"
 if metadata.get("dependencies", {}).get("Strata") != expected:
-    errors.append("library.json must pin Strata v0.1.3")
+    errors.append("library.json must pin Strata v0.1.4")
 
 reject(r"\bheap_caps_", "direct ESP-IDF heap allocation is forbidden")
 reject(r"\bMALLOC_CAP_", "direct ESP-IDF heap capability use is forbidden")

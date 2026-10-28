@@ -1,5 +1,7 @@
 # Knot
 
+> Current version: **v0.3.0** (Strata **v0.1.4**).
+
 Knot is a compact ESP32 password hashing library with a bcrypt-like self-contained hash string format, backed by PBKDF2-HMAC-SHA256.
 
 Knot helps Arduino ESP32 projects create and verify self-contained password hashes with secure salt generation, cost-based PBKDF2-HMAC-SHA256 hashing, constant-time comparison, cooperative verification, and bounded result buffers.
@@ -14,7 +16,7 @@ Knot helps Arduino ESP32 projects create and verify self-contained password hash
 * **Self-contained hashes** - the encoded hash stores the algorithm marker, version, cost, salt, and derived key.
 * **Cooperative verification** - split PBKDF2 comparison into bounded steps for FreeRTOS and Worker integration.
 * **ESP32-friendly** - fixed public buffers, no exceptions, result-based errors, and optional mutex protection.
-* **Shared memory policy** - Strata v0.1.3 owns Knot's dynamic storage and FreeRTOS mutex control block.
+* **Shared memory policy** - Strata v0.1.4 owns Knot's dynamic storage and FreeRTOS mutex control block.
 * **Familiar API shape** - `genSalt()`, `hash()`, `compare()`, and `getRounds()` helpers without bcrypt compatibility claims.
 * **Clear compatibility** - Knot hashes are not bcrypt hashes and never use bcrypt `$2a$`, `$2b$`, or `$2y$` prefixes.
 
@@ -37,7 +39,7 @@ build_unflags =
   -std=gnu++11
 ```
 
-Knot's `library.json` pins Strata v0.1.3, so PlatformIO resolves it transitively.
+Knot's `library.json` pins Strata v0.1.4, so PlatformIO resolves it transitively.
 
 ### Arduino IDE
 
@@ -48,7 +50,7 @@ Arduino/libraries/Strata
 Arduino/libraries/Knot
 ```
 
-Use Strata v0.1.3 or a compatible later release.
+Use Strata v0.1.4 or a compatible later release.
 
 ## Quick start
 
@@ -181,11 +183,11 @@ For the full API, see [`docs/api.md`](docs/api.md).
 | Platform | `espressif32` |
 | Language | C++20 |
 | Filesystem | none |
-| Memory layer | Strata `v0.1.3` |
+| Memory layer | Strata `v0.1.4` |
 | External memory | Optional through Strata placement policy |
-| Dependencies | Strata `v0.1.3` + mbedTLS from ESP32 platform |
+| Dependencies | Strata `v0.1.4` + mbedTLS from ESP32 platform |
 | Exceptions | Not used |
-| Status | `v0.2.0` API |
+| Status | `v0.3.0` API |
 
 ## Configuration
 
