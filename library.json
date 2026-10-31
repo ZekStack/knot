@@ -1,6 +1,6 @@
 {
   "name": "Knot",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Compact ESP32 password hashing library with a bcrypt-like self-contained hash string format backed by PBKDF2-HMAC-SHA256.",
   "keywords": [
     "esp32",
@@ -30,6 +30,6 @@
     ]
   },
   "dependencies": {
-    "Strata": "https://github.com/ZekStack/strata.git#v0.1.3"
+    "Strata": "https://github.com/ZekStack/strata.git#v0.1.4"
   }
 }

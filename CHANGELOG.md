@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0
+
+- Pin the Strata dependency to v0.1.4 across manifests and CI.
+- Advance Knot's minor version to v0.3.0.
+
 ## Unreleased
 
 * Standardized the repository on the `main` branch.
